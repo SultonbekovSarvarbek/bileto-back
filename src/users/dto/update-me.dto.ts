@@ -1,4 +1,4 @@
-import { Lang } from '@prisma/client';
+import { Lang, UserRole } from '@prisma/client';
 import {
   IsEnum,
   IsOptional,
@@ -17,4 +17,9 @@ export class UpdateMeDto {
   @IsOptional()
   @IsEnum(Lang)
   lang?: Lang;
+
+  /** Сменить роль: покупатель ↔ продавец */
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
 }

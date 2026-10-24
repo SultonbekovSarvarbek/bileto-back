@@ -74,6 +74,16 @@ export class ListingsService {
   }
 
   async create(sellerId: string, dto: CreateListingDto, proofPath: string) {
+    const seller = await this.prisma.user.findUniqueOrThrow({
+      where: { id: sellerId },
+      select: { role: true },
+    });
+    if (seller.role !== 'SELLER') {
+      await unlink(proofPath).catch(() => undefined);
+      throw new ForbiddenException(
+        'Продавать билеты могут только продавцы — смените роль в профиле',
+      );
+    }
     const created = await this.prisma.listing.create({
       data: { ...dto, sellerId, proofPath, qtyAvailable: dto.qty },
       include: { seller: { select: { name: true, phone: true } } },

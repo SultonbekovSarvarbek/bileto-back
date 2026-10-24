@@ -10,6 +10,7 @@ const ME_SELECT = {
   id: true,
   phone: true,
   name: true,
+  role: true,
   lang: true,
   verified: true,
   createdAt: true,

@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Кто пользователь на Bileto: продавать могут только продавцы.
+enum UserRole {
+  BUYER
+  SELLER
+}
+
 enum Lang {
   ru
   en
@@ -37,6 +43,7 @@ model User {
   id        String   @id @default(uuid())
   phone     String   @unique // +998XXXXXXXXX
   name      String?
+  role      UserRole @default(BUYER)
   lang      Lang     @default(ru)
   verified  Boolean  @default(false) // верификация через MyID
   createdAt DateTime @default(now())

@@ -1,4 +1,5 @@
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { UserRole } from '@prisma/client';
+import { IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class LoginDto {
   @IsString()
@@ -9,4 +10,8 @@ export class LoginDto {
   /** Номер телефона, например +998 90 123-45-67 */
   @IsString()
   phone: string;
+
+  /** Покупатель или продавец. Продавать билеты может только SELLER. */
+  @IsEnum(UserRole)
+  role: UserRole;
 }

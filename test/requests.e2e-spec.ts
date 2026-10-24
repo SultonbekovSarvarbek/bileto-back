@@ -51,10 +51,10 @@ describe('Заявки через Telegram (e2e)', () => {
   const tg = new FakeTelegram();
   const http = () => request(app.getHttpServer());
 
-  async function login(name = 'Азиз', phone = randomPhone()) {
+  async function login(name = 'Азиз', phone = randomPhone(), role = 'SELLER') {
     const res = await http()
       .post('/api/auth/login')
-      .send({ name, phone })
+      .send({ name, phone, role })
       .expect(200);
     const body = res.body as { token: string; user: { id: string } };
     return { id: body.user.id, phone, auth: `Bearer ${body.token}` };
@@ -116,7 +116,30 @@ describe('Заявки через Telegram (e2e)', () => {
       .get('/api/me')
       .set('Authorization', b.auth)
       .expect(200);
-    expect(me.body).toMatchObject({ name: 'Малика Р.', phone });
+    expect(me.body).toMatchObject({ name: 'Малика Р.', phone, role: 'SELLER' });
+
+    // Покупатель не может выставить билет, пока не сменит роль
+    const buyer = await login('Покупатель', randomPhone(), 'BUYER');
+    await http()
+      .post('/api/listings')
+      .set('Authorization', buyer.auth)
+      .field('title', 'Концерт')
+      .field('city', 'Ташкент')
+      .field('sector', 'Партер')
+      .field('qty', '1')
+      .field('price', '100000')
+      .field('delivery', 'PICKUP')
+      .attach('proof', PNG, {
+        filename: 'ticket.png',
+        contentType: 'image/png',
+      })
+      .expect(403);
+    await http()
+      .patch('/api/me')
+      .set('Authorization', buyer.auth)
+      .send({ role: 'SELLER' })
+      .expect(200);
+    await createListing(buyer.auth);
     await http()
       .post('/api/auth/login')
       .send({ name: 'X', phone: '123' })

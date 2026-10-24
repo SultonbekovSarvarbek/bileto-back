@@ -8,10 +8,10 @@ import { LoginDto } from './dto/login.dto';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
-  /** Регистрация / вход: имя и номер телефона. Возвращает JWT. */
+  /** Регистрация / вход: имя, номер телефона и роль. Возвращает JWT. */
   @Post('login')
   @HttpCode(200)
   login(@Body() dto: LoginDto) {
-    return this.auth.login(dto.name, dto.phone);
+    return this.auth.login(dto.name, dto.phone, dto.role);
   }
 }
