@@ -7,11 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
 enum Lang {
   ru
   en
@@ -25,64 +20,31 @@ enum Delivery {
 
 enum ListingStatus {
   ACTIVE
-  SOLD // всё количество зарезервировано или продано
+  SOLD // всё количество продано
   REJECTED // снято модератором
   ARCHIVED // снято продавцом
 }
 
-// Жизненный цикл безопасной сделки (эскроу):
-// PENDING_PAYMENT → PAID (деньги заморожены) → HANDED_OVER (продавец передал)
-//   → COMPLETED (покупатель подтвердил или истёк срок) → выплата продавцу.
-// Из PAID / HANDED_OVER покупатель может открыть спор → DISPUTED → REFUNDED или COMPLETED.
-enum OrderStatus {
-  PENDING_PAYMENT
-  PAID
-  HANDED_OVER
-  COMPLETED
-  DISPUTED
-  REFUNDED
+// Заявка на покупку: оператор обрабатывает её в Telegram, оплата — вне приложения.
+enum RequestStatus {
+  NEW
+  IN_PROGRESS
+  DONE // продано: билеты списываются с объявления
   CANCELLED
-}
-
-enum PayoutStatus {
-  NONE
-  PENDING // сделка завершена, нужно перечислить продавцу
-  PAID
-}
-
-enum PaymentMethod {
-  PAYME
-  CLICK
-  UZCARD
-  VISA
 }
 
 model User {
   id        String   @id @default(uuid())
   phone     String   @unique // +998XXXXXXXXX
   name      String?
-  role      Role     @default(USER)
   lang      Lang     @default(ru)
   verified  Boolean  @default(false) // верификация через MyID
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   listings  Listing[]
-  purchases Order[]    @relation("buyer")
-  sales     Order[]    @relation("seller")
+  requests  PurchaseRequest[]
   favorites Favorite[]
-}
-
-model OtpCode {
-  id        String    @id @default(uuid())
-  phone     String
-  codeHash  String
-  attempts  Int       @default(0)
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([phone, createdAt])
 }
 
 model Listing {
@@ -95,7 +57,7 @@ model Listing {
   row          String?
   seats        String?
   qty          Int // сколько билетов выставлено всего
-  qtyAvailable Int // сколько ещё можно купить (без резервов и продаж)
+  qtyAvailable Int // сколько ещё не продано
   price        Int // цена за 1 билет, сум
   delivery     Delivery
   proofPath    String // фото билета, видит только модератор
@@ -105,51 +67,35 @@ model Listing {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
-  orders    Order[]
+  requests  PurchaseRequest[]
   favorites Favorite[]
 
   @@index([status, city, createdAt])
   @@index([sellerId])
 }
 
-model Order {
-  id            String        @id @default(uuid())
-  listingId     String
-  listing       Listing       @relation(fields: [listingId], references: [id])
-  buyerId       String
-  buyer         User          @relation("buyer", fields: [buyerId], references: [id])
-  sellerId      String
-  seller        User          @relation("seller", fields: [sellerId], references: [id])
-  qty           Int
-  unitPrice     Int
-  subtotal      Int
-  fee           Int // сервисный сбор с покупателя
-  total         Int
-  paymentMethod PaymentMethod
-  paymentRef    String?
-  status        OrderStatus   @default(PENDING_PAYMENT)
-  payoutStatus  PayoutStatus  @default(NONE)
-
-  expiresAt        DateTime // оплатить до
-  paidAt           DateTime?
-  handoverDeadline DateTime? // передать билет до, иначе возврат покупателю
-  handedOverAt     DateTime?
-  confirmDeadline  DateTime? // подтвердить или открыть спор до, иначе сделка завершается
-  completedAt      DateTime?
-  disputeReason    String?
-  disputedAt       DateTime?
-  resolutionNote   String?
-  resolvedAt       DateTime?
-  refundedAt       DateTime?
-  cancelledAt      DateTime?
-  payoutAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+model PurchaseRequest {
+  id          String        @id @default(uuid())
+  number      Int           @unique @default(autoincrement()) // номер заявки для операторов: #12
+  listingId   String
+  listing     Listing       @relation(fields: [listingId], references: [id])
+  userId      String? // если покупатель вошёл в приложение
+  user        User?         @relation(fields: [userId], references: [id])
+  name        String
+  phone       String
+  qty         Int
+  unitPrice   Int
+  subtotal    Int
+  fee         Int // сервисный сбор, сум
+  total       Int
+  status      RequestStatus @default(NEW)
+  tgMessageId Int? // сообщение с заявкой в Telegram-чате операторов
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   @@index([status])
-  @@index([buyerId])
-  @@index([sellerId])
   @@index([listingId])
+  @@index([phone, createdAt])
 }
 
 model Favorite {

@@ -1,19 +1,12 @@
-import { OrderStatus, Prisma } from '@prisma/client';
-
-// Заказы, по которым сделка ещё идёт: пока они есть, объявление нельзя снять.
-export const OPEN_ORDER_STATUSES: OrderStatus[] = [
-  'PENDING_PAYMENT',
-  'PAID',
-  'HANDED_OVER',
-  'DISPUTED',
-];
+import { Prisma } from '@prisma/client';
+import { maskPhone } from '../common/utils/phone';
 
 export const SELLER_SELECT = {
   id: true,
   name: true,
+  phone: true,
   verified: true,
   createdAt: true,
-  _count: { select: { sales: { where: { status: 'COMPLETED' } } } },
 } satisfies Prisma.UserSelect;
 
 // Публичное представление: без proofPath (фото билета видит только модератор).
@@ -37,7 +30,8 @@ export const LISTING_PUBLIC_SELECT = {
 
 type Row = Prisma.ListingGetPayload<{ select: typeof LISTING_PUBLIC_SELECT }>;
 
+// Номер продавца покупателю виден только размытым: связь — через заявку и оператора.
 export function toPublicListing({ seller, ...l }: Row) {
-  const { _count, ...s } = seller;
-  return { ...l, seller: { ...s, deals: _count.sales } };
+  const { phone, ...s } = seller;
+  return { ...l, seller: { ...s, phoneMasked: maskPhone(phone) } };
 }

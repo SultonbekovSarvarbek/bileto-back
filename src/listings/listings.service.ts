@@ -3,23 +3,27 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ListingStatus, Prisma } from '@prisma/client';
 import { unlink } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
+import { TelegramService } from '../telegram/telegram.service';
+import { listingButtons, listingText } from '../requests/request.messages';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
-import {
-  LISTING_PUBLIC_SELECT,
-  OPEN_ORDER_STATUSES,
-  toPublicListing,
-} from './listing.view';
+import { LISTING_PUBLIC_SELECT, toPublicListing } from './listing.view';
 
 @Injectable()
 export class ListingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ListingsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly telegram: TelegramService,
+  ) {}
 
   async feed({ city, q, page, limit }: FeedQueryDto) {
     const query = q?.trim();
@@ -70,11 +74,19 @@ export class ListingsService {
   }
 
   async create(sellerId: string, dto: CreateListingDto, proofPath: string) {
-    const row = await this.prisma.listing.create({
+    const created = await this.prisma.listing.create({
       data: { ...dto, sellerId, proofPath, qtyAvailable: dto.qty },
-      select: LISTING_PUBLIC_SELECT,
+      include: { seller: { select: { name: true, phone: true } } },
     });
-    return toPublicListing(row);
+    // Операторы видят каждое новое объявление с фото билета и могут снять подделку.
+    await this.telegram
+      .sendPhoto(proofPath, listingText(created), listingButtons(created))
+      .catch((e: unknown) =>
+        this.logger.error(
+          `Объявление ${created.id} не ушло в Telegram: ${String(e)}`,
+        ),
+      );
+    return this.getPublic(created.id, sellerId);
   }
 
   mine(sellerId: string, status?: ListingStatus) {
@@ -105,12 +117,12 @@ export class ListingsService {
       throw new ConflictException('Снятое объявление нельзя изменить');
     }
 
-    // Уже купленные/зарезервированные билеты нельзя «убрать» уменьшением количества.
+    // Уже проданные билеты нельзя «убрать» уменьшением количества.
     const taken = listing.qty - listing.qtyAvailable;
     const qty = dto.qty ?? listing.qty;
     if (qty < taken)
       throw new BadRequestException(
-        `Нельзя меньше ${taken}: столько уже куплено или зарезервировано`,
+        `Нельзя меньше ${taken}: столько уже продано`,
       );
     const qtyAvailable = qty - taken;
 
@@ -131,13 +143,6 @@ export class ListingsService {
 
   async archive(sellerId: string, id: string) {
     await this.ownOrThrow(sellerId, id);
-    const open = await this.prisma.order.count({
-      where: { listingId: id, status: { in: OPEN_ORDER_STATUSES } },
-    });
-    if (open)
-      throw new ConflictException(
-        'По объявлению идёт сделка — снять его пока нельзя',
-      );
     await this.prisma.listing.update({
       where: { id },
       data: { status: 'ARCHIVED' },

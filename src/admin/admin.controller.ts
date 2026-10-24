@@ -12,28 +12,22 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { ListingStatus, OrderStatus, PayoutStatus, Role } from '@prisma/client';
+import { ApiHeader, ApiTags } from '@nestjs/swagger';
+import { ListingStatus, RequestStatus } from '@prisma/client';
 import type { Response } from 'express';
 import { relative, resolve } from 'path';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+import { AdminKeyGuard } from '../common/guards/admin-key.guard';
 import { PROOFS_DIR } from '../common/utils/upload';
 import { PrismaService } from '../prisma/prisma.service';
-import { OrdersService } from '../orders/orders.service';
-import { RejectListingDto, ResolveDisputeDto } from './dto/admin.dto';
+import { RejectListingDto } from './dto/admin.dto';
 
+// Основная работа операторов — в Telegram. Эти эндпоинты — запасной доступ и база для будущей веб-админки.
 @ApiTags('admin')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@ApiHeader({ name: 'X-Admin-Key', required: true })
+@UseGuards(AdminKeyGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly orders: OrdersService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get('listings')
   listings(
@@ -42,11 +36,7 @@ export class AdminController {
   ) {
     return this.prisma.listing.findMany({
       where: status ? { status } : {},
-      include: {
-        seller: {
-          select: { id: true, name: true, phone: true, verified: true },
-        },
-      },
+      include: { seller: { select: { id: true, name: true, phone: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
@@ -66,7 +56,6 @@ export class AdminController {
     res.sendFile(file);
   }
 
-  /** Снять объявление (подделка, нарушение правил) */
   @Post('listings/:id/reject')
   @HttpCode(200)
   reject(
@@ -79,7 +68,6 @@ export class AdminController {
     });
   }
 
-  /** Вернуть снятое объявление в продажу */
   @Post('listings/:id/restore')
   @HttpCode(200)
   async restore(@Param('id', ParseUUIDPipe) id: string) {
@@ -93,36 +81,25 @@ export class AdminController {
     });
   }
 
-  @Get('orders')
-  list(
-    @Query('status', new ParseEnumPipe(OrderStatus, { optional: true }))
-    status?: OrderStatus,
-    @Query('payoutStatus', new ParseEnumPipe(PayoutStatus, { optional: true }))
-    payoutStatus?: PayoutStatus,
+  /** Все заявки — на случай, если Telegram был недоступен */
+  @Get('requests')
+  requests(
+    @Query('status', new ParseEnumPipe(RequestStatus, { optional: true }))
+    status?: RequestStatus,
   ) {
-    return this.orders.list({
-      ...(status ? { status } : {}),
-      ...(payoutStatus ? { payoutStatus } : {}),
+    return this.prisma.purchaseRequest.findMany({
+      where: status ? { status } : {},
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            seller: { select: { name: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
     });
-  }
-
-  /** Решение по спору */
-  @Post('orders/:id/resolve')
-  @HttpCode(200)
-  async resolve(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ResolveDisputeDto,
-  ) {
-    if (dto.decision === 'REFUND')
-      await this.orders.refund(id, ['DISPUTED'], dto.note);
-    else await this.orders.complete(id, ['DISPUTED'], dto.note);
-    return this.prisma.order.findUniqueOrThrow({ where: { id } });
-  }
-
-  /** Отметить, что деньги перечислены продавцу */
-  @Post('orders/:id/payout')
-  @HttpCode(200)
-  payout(@Param('id', ParseUUIDPipe) id: string) {
-    return this.orders.markPayoutPaid(id);
   }
 }

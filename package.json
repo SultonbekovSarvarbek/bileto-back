@@ -1,7 +1,7 @@
 {
   "name": "bileto-back",
   "version": "0.1.0",
-  "description": "Bileto API — безопасная перепродажа билетов (эскроу)",
+  "description": "Bileto API — перепродажа билетов, заявки обрабатываются через Telegram",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -12,11 +12,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "seed": "dotenv -e .env -- ts-node prisma/seed.ts",
     "test:e2e": "dotenv -e .env.test -- prisma migrate deploy && dotenv -e .env.test -- jest --config ./test/jest-e2e.json --runInBand"
-  },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -25,7 +21,6 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.6",
     "@prisma/client": "^5.22.0",
     "class-transformer": "^0.5.1",
