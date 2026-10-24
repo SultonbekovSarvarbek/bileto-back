@@ -170,6 +170,8 @@ describe('Заявки через Telegram (e2e)', () => {
     const msg = tg.last().html;
     expect(msg).toContain('Сервисный сбор 7%: 70 000 сум');
     expect(msg).toContain('Итого покупатель платит: 1 070 000 сум');
+    expect(msg).toContain('Комиссия Bileto 10%: 100 000 сум');
+    expect(msg).toContain('Продавцу: 900 000 сум');
     expect(msg).toContain(buyerPhone.slice(6, 9)); // телефон покупателя виден оператору
     expect(msg).toContain(seller.phone.slice(6, 9)); // и телефон продавца
     expect(

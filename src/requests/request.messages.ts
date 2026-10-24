@@ -1,7 +1,12 @@
 import { Delivery, Prisma, RequestStatus } from '@prisma/client';
 import { InlineButton, escapeHtml as h } from '../telegram/telegram.service';
 import { formatPhone } from '../common/utils/phone';
-import { formatSum, serviceFeePercent } from '../common/utils/money';
+import {
+  formatSum,
+  sellerCommission,
+  sellerCommissionPercent,
+  serviceFeePercent,
+} from '../common/utils/money';
 
 // Тексты сообщений в чате операторов.
 
@@ -43,7 +48,8 @@ export function requestText(r: RequestRow, actor?: string) {
     `Билеты: ${r.qty} × ${formatSum(r.unitPrice)} = ${formatSum(r.subtotal)}`,
     `Сервисный сбор ${serviceFeePercent()}%: ${formatSum(r.fee)}`,
     `<b>Итого покупатель платит: ${formatSum(r.total)}</b>`,
-    `Продавцу: ${formatSum(r.subtotal)}`,
+    `Комиссия Bileto ${sellerCommissionPercent()}%: ${formatSum(sellerCommission(r.subtotal))}`,
+    `Продавцу: ${formatSum(r.subtotal - sellerCommission(r.subtotal))}`,
     '',
     `👤 Покупатель: ${h(r.name)}, ${formatPhone(r.phone)}`,
     `🏷 Продавец: ${h(l.seller.name ?? '—')}, ${formatPhone(l.seller.phone)}`,
