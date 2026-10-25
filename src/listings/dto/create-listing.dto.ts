@@ -46,6 +46,12 @@ export class CreateListingDto {
   @MaxLength(40)
   seats?: string;
 
+  /** Комментарий продавца. Телефоны, ники и ссылки из него вырезаются */
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  description?: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(1)

@@ -37,6 +37,13 @@ const place = (l: {
     .filter(Boolean)
     .join(', ');
 
+const clip = (s: string, n: number) =>
+  s.length > n ? s.slice(0, n - 1) + '…' : s;
+
+// Импортированное объявление: продавец на OLX, связь с ним — через исходное объявление.
+const source = (l: { sourceUrl: string | null }) =>
+  l.sourceUrl ? [`🔗 Объявление на OLX: ${h(l.sourceUrl)}`] : [];
+
 export function requestText(r: RequestRow, actor?: string) {
   const l = r.listing;
   return [
@@ -54,6 +61,7 @@ export function requestText(r: RequestRow, actor?: string) {
     `👤 Покупатель: ${h(r.name)}, ${formatPhone(r.phone)}`,
     `🏷 Продавец: ${h(l.seller.name ?? '—')}, ${formatPhone(l.seller.phone)}`,
     `В наличии сейчас: ${l.qtyAvailable} шт.`,
+    ...source(l),
   ].join('\n');
 }
 
@@ -87,6 +95,9 @@ export function listingText(l: ListingForMessage, rejectedBy?: string) {
     `${h(place(l))} · ${h(l.city)} · ${DELIVERY[l.delivery]}`,
     `${l.qty} шт. × ${formatSum(l.price)}`,
     `🏷 Продавец: ${h(l.seller.name ?? '—')}, ${formatPhone(l.seller.phone)}`,
+    ...source(l),
+    // Подпись к фото в Telegram ограничена 1024 символами — описание обрезаем.
+    ...(l.description ? ['', `💬 ${h(clip(l.description, 300))}`] : []),
   ].join('\n');
 }
 

@@ -64,6 +64,7 @@ model Listing {
   sector       String
   row          String?
   seats        String?
+  description  String? // комментарий продавца, контакты из него вырезаются
   qty          Int // сколько билетов выставлено всего
   qtyAvailable Int // сколько ещё не продано
   price        Int // цена за 1 билет, сум
@@ -71,6 +72,7 @@ model Listing {
   proofPath    String // фото билета, видит только модератор
   status       ListingStatus @default(ACTIVE)
   rejectReason String?
+  sourceUrl    String?       @unique // импорт с OLX: оператор связывается с продавцом там
   views        Int           @default(0)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

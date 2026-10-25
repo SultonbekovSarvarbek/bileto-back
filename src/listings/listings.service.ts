@@ -15,6 +15,10 @@ import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
 import { LISTING_PUBLIC_SELECT, toPublicListing } from './listing.view';
+import { stripContacts } from '../common/utils/contacts';
+
+// Пустое описание после чистки контактов храним как null.
+const cleanDescription = (s?: string) => (s && stripContacts(s)) || null;
 
 @Injectable()
 export class ListingsService {
@@ -85,7 +89,13 @@ export class ListingsService {
       );
     }
     const created = await this.prisma.listing.create({
-      data: { ...dto, sellerId, proofPath, qtyAvailable: dto.qty },
+      data: {
+        ...dto,
+        description: cleanDescription(dto.description),
+        sellerId,
+        proofPath,
+        qtyAvailable: dto.qty,
+      },
       include: { seller: { select: { name: true, phone: true } } },
     });
     // Операторы видят каждое новое объявление с фото билета и могут снять подделку.
@@ -140,6 +150,9 @@ export class ListingsService {
       where: { id },
       data: {
         ...dto,
+        ...(dto.description !== undefined
+          ? { description: cleanDescription(dto.description) }
+          : {}),
         qty,
         qtyAvailable,
         status: qtyAvailable > 0 ? 'ACTIVE' : 'SOLD',

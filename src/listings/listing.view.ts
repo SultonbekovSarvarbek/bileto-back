@@ -18,6 +18,7 @@ export const LISTING_PUBLIC_SELECT = {
   sector: true,
   row: true,
   seats: true,
+  description: true,
   qty: true,
   qtyAvailable: true,
   price: true,
