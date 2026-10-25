@@ -72,6 +72,7 @@ model Listing {
   proofPath    String // фото билета, видит только модератор
   status       ListingStatus @default(ACTIVE)
   rejectReason String?
+  coverUrl     String? // афиша события (с iticket.uz для импортированных объявлений)
   sourceUrl    String?       @unique // импорт с OLX: оператор связывается с продавцом там
   views        Int           @default(0)
   createdAt    DateTime      @default(now())

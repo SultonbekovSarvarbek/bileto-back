@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { stripContacts } from '../src/common/utils/contacts';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import sharp from 'sharp';
 
 type OlxItem = {
   id: number;
@@ -64,18 +65,80 @@ function sector(text: string) {
 
 // Событие из каталога приложения (src/data.ts в bileto): по нему приложение показывает обложку, дату и площадку.
 // Меладзе в каталоге только 30 октября — объявления на 1 ноября не привязываем, чтобы не показать неверную дату.
+const RICHTER = /max\s*richter|макс\s*рихтер/i;
+const SHOXRUX = /sho[xh]ru[xh]|шохру[хx]|(^|[^\p{L}])(shox|шох)([^\p{L}]|$)/iu;
+const AL_NASSR = /al.?nass?r|аль?.?насс?р/i;
+const MOLLY = /пошл\S* молли/i;
+
 const EVENTS: [string, RegExp, RegExp?][] = [
-  ['e1', /max\s*richter|макс\s*рихтер/i],
+  ['e1', RICHTER],
   ['e5', /меладзе|meladze/i, /1\s*ноябр|01\.11/i],
   ['e7', /агутин/i],
-  ['e8', /sho[xh]ru[xh]|шохру[хx]|(^|[^\p{L}])(shox|шох)([^\p{L}]|$)/iu],
-  ['e9', /al.?nass?r|аль?.?насс?р/i],
-  ['e16', /пошл\S* молли/i],
+  ['e8', SHOXRUX],
+  ['e9', AL_NASSR],
+  ['e16', MOLLY],
   ['e17', /lvbel/i],
   ['e23', /yangi yil shou/i],
 ];
 const eventId = (text: string) =>
   EVENTS.find(([, re, not]) => re.test(text) && !not?.test(text))?.[0] ?? null;
+
+// Афиша события с iticket.uz: [slug, поисковый запрос, признак в тексте объявления].
+// Не нашли событие — обложки нет, приложение покажет обложку каталога или заглушку.
+const ITICKET: [string, string, RegExp][] = [
+  ['shoxrux2026', 'shoxrux', SHOXRUX],
+  ['ppaalsr26', 'Pakhtakor', AL_NASSR],
+  ['valerij-meladze2026', 'meladze', /меладзе|meladze/i],
+  ['leonid-agutin-2026', 'agutin', /агутин/i],
+  ['max-richter', 'richter', RICHTER],
+  ['avaz-oxun2026', 'avaz', /ava[zs]\s*o[xh]u[nm]|аваз\s*о[хx]у[нм]/i],
+  ['gaybulla-tursunov2026', 'gaybulla', /g.?aybulla|ғайбулла|гайбулла/i],
+  ['poshlayamolly', 'Пошлая', MOLLY],
+  ['benom-guruhi-the-best-yangi', 'benom', /benom|беном/i],
+  ['bunyodbek-saidov26', 'bunyodbek', /bunyodbek|бунё?дбек|бунйодбек/i],
+  ['lvbel-c5-2026', 'lvbel', /lvbel/i],
+  ['yalla-ansambli-soginib-kutgandim', 'yalla', /yalla|ялла/i],
+  ['yangi-yil-shou', 'yangi yil', /yangi yil shou/i],
+  ['xurshid-rasulov2027', 'xurshid', /xurshid\s*rasulov|хуршид\s*расулов/i],
+  ['otabek-madrahimov', 'otabek', /otabek\s*madrahimov|отабека?\s*мадрахимов/i],
+];
+
+const COVERS_DIR = join(process.cwd(), 'uploads', 'covers');
+const PUBLIC_URL = process.env.PUBLIC_URL ?? 'https://api.bileto.uz';
+
+type IticketEvent = {
+  slug: string;
+  poster_url: string | null;
+  poster_bg_url: string | null;
+};
+
+const download = async (url: string) =>
+  Buffer.from(await (await fetch(url)).arrayBuffer());
+
+// iTicket рисует афишу двумя слоями: фон и прозрачная PNG поверх (у матча — логотипы команд).
+// Склеиваем их в одну картинку и раздаём сами: https://api.bileto.uz/covers/<slug>.jpg
+async function iticketPosters() {
+  await mkdir(COVERS_DIR, { recursive: true });
+  const posters = new Map<string, string>();
+  for (const [slug, q] of ITICKET) {
+    const url = `https://api.iticket.uz/ru/v5/events/search?client=web&q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const data = (await res.json()) as {
+      response: { events: IticketEvent[] };
+    };
+    const event = data.response.events.find((e) => e.slug === slug);
+    if (!event?.poster_bg_url) {
+      console.warn(`iTicket: нет афиши для ${slug}`);
+      continue;
+    }
+    const bg = sharp(await download(event.poster_bg_url));
+    if (event.poster_url)
+      bg.composite([{ input: await download(event.poster_url) }]);
+    await bg.jpeg({ quality: 85 }).toFile(join(COVERS_DIR, `${slug}.jpg`));
+    posters.set(slug, `${PUBLIC_URL}/covers/${slug}.jpg`);
+  }
+  return posters;
+}
 
 // Количество билетов, если указано: "2 ta", "3 шт", "4 билета". Иначе 1.
 function qty(text: string) {
@@ -106,6 +169,11 @@ async function main() {
   const items = Array.isArray(raw) ? raw : raw.items;
 
   const rate = await usdRate();
+  const posters = await iticketPosters();
+  const coverUrl = (text: string) => {
+    const slug = ITICKET.find(([, , re]) => re.test(text))?.[0];
+    return (slug && posters.get(slug)) || null;
+  };
   await mkdir(PROOFS_DIR, { recursive: true });
   const seller = await prisma.user.upsert({
     where: { phone: SELLER_PHONE },
@@ -133,6 +201,7 @@ async function main() {
       sector: sector(text),
       price,
       eventId: eventId(text),
+      coverUrl: coverUrl(text),
       description: stripContacts(item.description).slice(0, 1000) || null,
     };
 

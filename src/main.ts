@@ -1,5 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { timingSafeEqual } from 'crypto';
 import type { NextFunction, Request, Response } from 'express';
@@ -26,8 +28,13 @@ export function configureApp(app: INestApplication) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   configureApp(app);
+  // Афиши событий для ленты — публичные, в отличие от фото билетов в uploads/proofs.
+  app.useStaticAssets(join(process.cwd(), 'uploads', 'covers'), {
+    prefix: '/covers/',
+    maxAge: '7d',
+  });
 
   const swaggerUser = process.env.SWAGGER_USER;
   const swaggerPassword = process.env.SWAGGER_PASSWORD;
