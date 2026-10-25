@@ -88,6 +88,18 @@ export class ListingsController {
     return this.listings.archive(user.id, id);
   }
 
+  /** Отметить объявление проданным: продавец продал билеты сам */
+  @Post('listings/:id/sold')
+  @HttpCode(204)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  markSold(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.listings.markSold(user.id, id);
+  }
+
   /** Мои объявления */
   @Get('me/listings')
   @ApiBearerAuth()

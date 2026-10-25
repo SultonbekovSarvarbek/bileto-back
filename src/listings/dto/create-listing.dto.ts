@@ -13,6 +13,12 @@ import {
 
 // Приходит multipart/form-data вместе с файлом "proof", поэтому числа приводим через @Type.
 export class CreateListingDto {
+  /** Событие из каталога приложения, если объявление создано со страницы события */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  eventId?: string;
+
   /** Название, которое ввёл продавец */
   @IsString()
   @MinLength(2)

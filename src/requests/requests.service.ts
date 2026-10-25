@@ -118,6 +118,7 @@ export class RequestsService implements OnModuleInit {
       ...rest,
       listing: {
         id: listing.id,
+        eventId: listing.eventId,
         title: listing.title,
         sector: listing.sector,
         row: listing.row,

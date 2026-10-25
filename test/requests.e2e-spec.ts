@@ -293,4 +293,35 @@ describe('Заявки через Telegram (e2e)', () => {
       .set('X-Admin-Key', process.env.ADMIN_API_KEY!)
       .expect(200);
   });
+
+  it('объявление со страницы события хранит eventId; продавец отмечает «Продано»', async () => {
+    const seller = await login('Малика');
+    const listing = await createListing(seller.auth, { eventId: 'e4' });
+    const other = await login('Шерзод');
+
+    await http()
+      .post(`/api/listings/${listing.id}/sold`)
+      .set('Authorization', other.auth)
+      .expect(403);
+    await http()
+      .post(`/api/listings/${listing.id}/sold`)
+      .set('Authorization', seller.auth)
+      .expect(204);
+
+    const res = await http().get(`/api/listings/${listing.id}`).expect(200);
+    expect(res.body).toMatchObject({
+      eventId: 'e4',
+      status: 'SOLD',
+      qtyAvailable: 0,
+    });
+    await http()
+      .post('/api/requests')
+      .send({
+        listingId: listing.id,
+        qty: 1,
+        name: 'Гость',
+        phone: randomPhone(),
+      })
+      .expect(404);
+  });
 });

@@ -58,6 +58,7 @@ model Listing {
   id           String        @id @default(uuid())
   sellerId     String
   seller       User          @relation(fields: [sellerId], references: [id])
+  eventId      String? // событие из каталога приложения: обложка, дата и площадка
   title        String
   city         String
   sector       String

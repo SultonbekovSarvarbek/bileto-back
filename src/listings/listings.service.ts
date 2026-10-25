@@ -151,6 +151,16 @@ export class ListingsService {
     return toPublicListing(row);
   }
 
+  async markSold(sellerId: string, id: string) {
+    const listing = await this.ownOrThrow(sellerId, id);
+    if (listing.status !== 'ACTIVE')
+      throw new ConflictException('Объявление уже снято с продажи');
+    await this.prisma.listing.update({
+      where: { id },
+      data: { status: 'SOLD', qtyAvailable: 0 },
+    });
+  }
+
   async archive(sellerId: string, id: string) {
     await this.ownOrThrow(sellerId, id);
     await this.prisma.listing.update({

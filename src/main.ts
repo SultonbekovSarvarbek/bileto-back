@@ -40,9 +40,11 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('Bileto API')
     .setDescription(
-      'Безопасная перепродажа билетов: деньги замораживаются до передачи билета',
+      'Перепродажа билетов: заявки на покупку обрабатывают операторы, оплата — вне приложения',
     )
     .setVersion('0.1')
+    .addServer('https://api.bileto.uz', 'Production')
+    .addServer(`http://localhost:${process.env.PORT ?? 3000}`, 'Local')
     .addBearerAuth()
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));

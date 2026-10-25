@@ -6,12 +6,15 @@ API для мобильного приложения Bileto — перепрод
 
 **Стек:** NestJS 11, Prisma 5, PostgreSQL, JWT, Swagger.
 
+**Продакшен:** `https://api.bileto.uz/api` (Swagger — `https://api.bileto.uz/docs`). Мобильное приложение берёт адрес из `EXPO_PUBLIC_API_URL`.
+
 ## Запуск
 
 ```bash
 npm install
 cp .env.example .env            # заполнить DATABASE_URL, JWT_SECRET, ADMIN_API_KEY
 npx prisma migrate dev          # создать таблицы
+npm run db:seed                 # демо: 6 продавцов и 29 объявлений на события с афиши iTicket
 npm run start:dev               # http://localhost:3000/api, Swagger — /docs
 ```
 
