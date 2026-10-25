@@ -28,14 +28,8 @@ const DELIVERY: Record<Delivery, string> = {
   PICKUP: 'Самовывоз',
 };
 
-const place = (l: {
-  sector: string;
-  row: string | null;
-  seats: string | null;
-}) =>
-  [l.sector, l.row && `ряд ${l.row}`, l.seats && `места ${l.seats}`]
-    .filter(Boolean)
-    .join(', ');
+const place = (l: { city: string; delivery: Delivery }) =>
+  `${h(l.city)} · ${DELIVERY[l.delivery]}`;
 
 const clip = (s: string, n: number) =>
   s.length > n ? s.slice(0, n - 1) + '…' : s;
@@ -50,7 +44,9 @@ export function requestText(r: RequestRow, actor?: string) {
     `🎟 <b>Заявка #${r.number}</b> — ${STATUS[r.status]}${actor ? ` (${h(actor)})` : ''}`,
     '',
     `<b>${h(l.title)}</b>`,
-    `${h(place(l))} · ${h(l.city)} · ${DELIVERY[l.delivery]}`,
+    place(l),
+    // Место и ряд продавец пишет в описании — оператору оно нужно в заявке.
+    ...(l.description ? [`💬 ${h(clip(l.description, 300))}`] : []),
     '',
     `Билеты: ${r.qty} × ${formatSum(r.unitPrice)} = ${formatSum(r.subtotal)}`,
     `Сервисный сбор ${serviceFeePercent()}%: ${formatSum(r.fee)}`,
@@ -92,7 +88,7 @@ export function listingText(l: ListingForMessage, rejectedBy?: string) {
     `🆕 <b>Новое объявление</b>${rejectedBy ? ` — ⛔ снято (${h(rejectedBy)})` : ''}`,
     '',
     `<b>${h(l.title)}</b>`,
-    `${h(place(l))} · ${h(l.city)} · ${DELIVERY[l.delivery]}`,
+    place(l),
     `${l.qty} шт. × ${formatSum(l.price)}`,
     `🏷 Продавец: ${h(l.seller.name ?? '—')}, ${formatPhone(l.seller.phone)}`,
     ...source(l),

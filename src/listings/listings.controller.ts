@@ -45,7 +45,7 @@ export class ListingsController {
     return this.listings.getPublic(id, user?.id);
   }
 
-  /** Создать объявление. multipart/form-data: поля CreateListingDto + файл "proof" (фото билета, обязательно) */
+  /** Создать объявление. multipart/form-data: поля CreateListingDto + файл "proof" (обложка: фото билета или любое фото, обязательно) */
   @Post('listings')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
@@ -57,11 +57,12 @@ export class ListingsController {
     @Body() dto: CreateListingDto,
     @UploadedFile() proof?: Express.Multer.File,
   ) {
-    if (!proof) throw new BadRequestException('Добавьте фото билета');
+    if (!proof)
+      throw new BadRequestException('Добавьте фото билета или обложку');
     return this.listings.create(user.id, dto, proof.path);
   }
 
-  /** Изменить объявление. Можно приложить новое фото "proof". */
+  /** Изменить объявление. Можно приложить новую обложку "proof". */
   @Patch('listings/:id')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)

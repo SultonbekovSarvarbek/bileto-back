@@ -11,7 +11,7 @@ import {
   MinLength,
 } from 'class-validator';
 
-// Приходит multipart/form-data вместе с файлом "proof", поэтому числа приводим через @Type.
+// Приходит multipart/form-data вместе с файлом "proof" (обложка), поэтому числа приводим через @Type.
 export class CreateListingDto {
   /** Событие из каталога приложения, если объявление создано со страницы события */
   @IsOptional()
@@ -30,23 +30,7 @@ export class CreateListingDto {
   @MaxLength(60)
   city: string;
 
-  /** Сектор / зона */
-  @IsString()
-  @MinLength(1)
-  @MaxLength(60)
-  sector: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  row?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  seats?: string;
-
-  /** Комментарий продавца. Телефоны, ники и ссылки из него вырезаются */
+  /** Описание продавца: место, ряд, формат билета. Телефоны, ники и ссылки из него вырезаются */
   @IsOptional()
   @IsString()
   @MaxLength(1000)

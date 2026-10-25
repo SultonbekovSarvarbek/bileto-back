@@ -68,9 +68,6 @@ describe('Заявки через Telegram (e2e)', () => {
     const data = {
       title: 'Концерт в Humo Arena',
       city: 'Ташкент',
-      sector: 'Партер',
-      row: '5',
-      seats: '1–3',
       qty: '3',
       price: '500000',
       delivery: 'PICKUP',
@@ -125,7 +122,6 @@ describe('Заявки через Telegram (e2e)', () => {
       .set('Authorization', buyer.auth)
       .field('title', 'Концерт')
       .field('city', 'Ташкент')
-      .field('sector', 'Партер')
       .field('qty', '1')
       .field('price', '100000')
       .field('delivery', 'PICKUP')
@@ -150,16 +146,25 @@ describe('Заявки через Telegram (e2e)', () => {
     const seller = await login('Тимур');
     const listing = await createListing(seller.auth, {
       title: 'Лебединое озеро уникальное',
+      description: 'Партер, ряд 5, места 1–3',
     });
     expect(tg.last()).toMatchObject({ photo: expect.any(String) as string });
     expect(tg.last().html).toContain('Лебединое озеро уникальное');
+    expect(tg.last().html).toContain('\nТашкент · Самовывоз\n');
+    expect(tg.last().html).toContain('Партер, ряд 5, места 1–3');
 
     const feed = await http()
       .get('/api/listings')
       .query({ q: 'лебединое озеро уник' })
       .expect(200);
     const item = (
-      feed.body as { items: { id: string; seller: Record<string, unknown> }[] }
+      feed.body as {
+        items: {
+          id: string;
+          coverUrl: string;
+          seller: Record<string, unknown>;
+        }[];
+      }
     ).items[0];
     expect(item.id).toBe(listing.id);
     expect(item.seller.phone).toBeUndefined();
@@ -167,6 +172,9 @@ describe('Заявки через Telegram (e2e)', () => {
       `${seller.phone.slice(0, 4)} ${seller.phone.slice(4, 6)} ••• •• ${seller.phone.slice(-2)}`,
     );
     expect(item).not.toHaveProperty('proofPath');
+    expect(item).not.toHaveProperty('sector');
+    // Фото продавца — публичная обложка объявления
+    expect(item.coverUrl).toMatch(/^\/photos\/[\w-]+\.png$/);
   });
 
   it('заявка без входа: сбор 7% в сумах, сообщение операторам с телефонами обеих сторон', async () => {

@@ -17,7 +17,7 @@ import { ListingStatus, RequestStatus } from '@prisma/client';
 import type { Response } from 'express';
 import { relative, resolve } from 'path';
 import { AdminKeyGuard } from '../common/guards/admin-key.guard';
-import { PROOFS_DIR } from '../common/utils/upload';
+import { PHOTOS_DIR, PROOFS_DIR } from '../common/utils/upload';
 import { PrismaService } from '../prisma/prisma.service';
 import { RejectListingDto } from './dto/admin.dto';
 
@@ -42,15 +42,17 @@ export class AdminController {
     });
   }
 
-  /** Фото билета для модерации */
+  /** Фото из объявления для модерации */
   @Get('listings/:id/proof')
   async proof(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response) {
     const listing = await this.prisma.listing.findUnique({
       where: { id },
       select: { proofPath: true },
     });
-    const file = listing && resolve(listing.proofPath);
-    if (!file || relative(PROOFS_DIR, file).startsWith('..'))
+    if (!listing) throw new NotFoundException();
+    const file = resolve(listing.proofPath);
+    const inside = (dir: string) => !relative(dir, file).startsWith('..');
+    if (!inside(PROOFS_DIR) && !inside(PHOTOS_DIR))
       throw new NotFoundException();
     res.set('Cache-Control', 'private, no-store');
     res.sendFile(file);

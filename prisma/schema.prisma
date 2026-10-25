@@ -61,18 +61,15 @@ model Listing {
   eventId      String? // событие из каталога приложения: обложка, дата и площадка
   title        String
   city         String
-  sector       String
-  row          String?
-  seats        String?
-  description  String? // комментарий продавца, контакты из него вырезаются
+  description  String? // описание продавца: место, ряд, формат билета. Контакты вырезаются
   qty          Int // сколько билетов выставлено всего
   qtyAvailable Int // сколько ещё не продано
   price        Int // цена за 1 билет, сум
   delivery     Delivery
-  proofPath    String // фото билета, видит только модератор
+  proofPath    String // файл фото продавца: уходит модераторам в Telegram
   status       ListingStatus @default(ACTIVE)
   rejectReason String?
-  coverUrl     String? // афиша события (с iticket.uz для импортированных объявлений)
+  coverUrl     String? // обложка: фото продавца (/photos/…) или афиша iticket.uz у импортированных
   sourceUrl    String?       @unique // импорт с OLX: оператор связывается с продавцом там
   views        Int           @default(0)
   createdAt    DateTime      @default(now())

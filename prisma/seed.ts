@@ -4,7 +4,7 @@ import { Delivery, PrismaClient } from '@prisma/client';
 import data from './seed-data.json';
 
 const prisma = new PrismaClient();
-// У демо-объявлений нет настоящего фото билета: путь-заглушка, админский эндпоинт вернёт 404.
+// У демо-объявлений нет своего фото: путь-заглушка, админский эндпоинт вернёт 404, обложка — из каталога.
 const DEMO_PROOF = 'seed/demo-proof.jpg';
 
 async function main() {
@@ -35,9 +35,7 @@ async function main() {
         eventId: l.eventId,
         title: l.title,
         city: l.city,
-        sector: l.sector,
-        row: l.row,
-        seats: l.seats,
+        description: l.description,
         qty: l.qty,
         qtyAvailable: l.qty,
         price: l.price,

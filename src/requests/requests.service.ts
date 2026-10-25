@@ -120,8 +120,6 @@ export class RequestsService implements OnModuleInit {
         id: listing.id,
         eventId: listing.eventId,
         title: listing.title,
-        sector: listing.sector,
-        row: listing.row,
       },
     };
   }

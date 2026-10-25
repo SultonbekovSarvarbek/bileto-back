@@ -1,11 +1,17 @@
 import { BadRequestException } from '@nestjs/common';
 import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
-import { extname, join } from 'path';
+import { basename, extname, join } from 'path';
 import { mkdirSync } from 'fs';
 
-// Фото билетов лежат вне публичной раздачи: их отдаёт только админский эндпоинт.
+// Старые фото билетов (до обложек) лежат вне публичной раздачи: их отдаёт только админский эндпоинт.
 export const PROOFS_DIR = join(process.cwd(), 'uploads', 'proofs');
+// Фото продавца — обложка объявления: билет или любая картинка на его выбор. Раздаётся публично.
+export const PHOTOS_DIR = join(process.cwd(), 'uploads', 'photos');
+export const PHOTOS_PREFIX = '/photos/';
+
+// В coverUrl храним путь без хоста: приложение подставляет адрес API само.
+export const photoUrl = (path: string) => PHOTOS_PREFIX + basename(path);
 
 const ALLOWED = new Set([
   'image/jpeg',
@@ -17,8 +23,8 @@ const ALLOWED = new Set([
 export const proofUploadOptions = {
   storage: diskStorage({
     destination: (_req, _file, cb) => {
-      mkdirSync(PROOFS_DIR, { recursive: true });
-      cb(null, PROOFS_DIR);
+      mkdirSync(PHOTOS_DIR, { recursive: true });
+      cb(null, PHOTOS_DIR);
     },
     filename: (_req, file, cb) =>
       cb(null, randomUUID() + extname(file.originalname).toLowerCase()),

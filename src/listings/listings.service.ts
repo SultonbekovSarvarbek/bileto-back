@@ -11,6 +11,7 @@ import { unlink } from 'fs/promises';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { listingButtons, listingText } from '../requests/request.messages';
+import { photoUrl } from '../common/utils/upload';
 import { CreateListingDto } from './dto/create-listing.dto';
 import { UpdateListingDto } from './dto/update-listing.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
@@ -39,7 +40,7 @@ export class ListingsService {
         ? {
             OR: [
               { title: { contains: query, mode: 'insensitive' } },
-              { sector: { contains: query, mode: 'insensitive' } },
+              { description: { contains: query, mode: 'insensitive' } },
             ],
           }
         : {}),
@@ -94,11 +95,12 @@ export class ListingsService {
         description: cleanDescription(dto.description),
         sellerId,
         proofPath,
+        coverUrl: photoUrl(proofPath),
         qtyAvailable: dto.qty,
       },
       include: { seller: { select: { name: true, phone: true } } },
     });
-    // Операторы видят каждое новое объявление с фото билета и могут снять подделку.
+    // Операторы видят каждое новое объявление с фото и могут снять подделку.
     await this.telegram
       .sendPhoto(proofPath, listingText(created), listingButtons(created))
       .catch((e: unknown) =>
@@ -156,7 +158,9 @@ export class ListingsService {
         qty,
         qtyAvailable,
         status: qtyAvailable > 0 ? 'ACTIVE' : 'SOLD',
-        ...(newProofPath ? { proofPath: newProofPath } : {}),
+        ...(newProofPath
+          ? { proofPath: newProofPath, coverUrl: photoUrl(newProofPath) }
+          : {}),
       },
       select: LISTING_PUBLIC_SELECT,
     });

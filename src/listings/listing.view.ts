@@ -9,15 +9,12 @@ export const SELLER_SELECT = {
   createdAt: true,
 } satisfies Prisma.UserSelect;
 
-// Публичное представление: без proofPath (фото билета видит только модератор).
+// Публичное представление: без proofPath — обложку отдаёт coverUrl.
 export const LISTING_PUBLIC_SELECT = {
   id: true,
   eventId: true,
   title: true,
   city: true,
-  sector: true,
-  row: true,
-  seats: true,
   description: true,
   coverUrl: true,
   qty: true,

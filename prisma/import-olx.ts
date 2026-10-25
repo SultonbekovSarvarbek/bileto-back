@@ -44,25 +44,6 @@ async function usdRate() {
   }
 }
 
-// Сектор из текста объявления, если продавец его указал.
-function sector(text: string) {
-  const t = text.replace(/\s+/g, ' ');
-  const m =
-    t.match(
-      /(?:сектор|sector|sektor|блитчер|blitcher|biletcher)\s*([A-ZА-Я]?\d{1,3}|[A-ZА-Я]\d?)\b/i,
-    ) ??
-    t.match(/\b(\d{1,2})\s*-?\s*(?:сектор|sector|sektor)/i) ??
-    t.match(/\b([ABCDEАВСЕ]\d{3})\b/);
-  if (m) return `Сектор ${m[1].toUpperCase()}`;
-  if (/golden\s*ring|голден/i.test(t)) return 'Golden Ring';
-  if (/mstar\s*pit/i.test(t)) return 'Mstar Pit';
-  if (/fan\s*-?\s*zon|фан\s*-?\s*зон/i.test(t)) return 'Фан-зона';
-  if (/vip/i.test(t)) return 'VIP';
-  if (/партер/i.test(t)) return 'Партер';
-  if (/балкон|balkon/i.test(t)) return 'Балкон';
-  return '—';
-}
-
 // Событие из каталога приложения (src/data.ts в bileto): по нему приложение показывает обложку, дату и площадку.
 // Меладзе в каталоге только 30 октября — объявления на 1 ноября не привязываем, чтобы не показать неверную дату.
 const RICHTER = /max\s*richter|макс\s*рихтер/i;
@@ -198,7 +179,6 @@ async function main() {
     const data = {
       title: item.title.trim().slice(0, 120),
       city: item.location.split(',')[0].trim(),
-      sector: sector(text),
       price,
       eventId: eventId(text),
       coverUrl: coverUrl(text),
