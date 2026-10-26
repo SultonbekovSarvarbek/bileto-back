@@ -69,6 +69,7 @@ export class UsersController {
         data: {
           phone: `deleted:${user.id}`,
           name: null,
+          passwordHash: null,
           deletedAt: new Date(),
         },
       }),

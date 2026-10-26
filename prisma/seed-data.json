@@ -40,7 +40,8 @@
    "id": "u7",
    "name": "App Review",
    "phone": "+998900000000",
-   "verified": true
+   "verified": true,
+   "password": "Review2026"
   }
  ],
  "listings": [

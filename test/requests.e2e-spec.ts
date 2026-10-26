@@ -53,8 +53,8 @@ describe('Заявки через Telegram (e2e)', () => {
 
   async function login(name = 'Азиз', phone = randomPhone(), role = 'SELLER') {
     const res = await http()
-      .post('/api/auth/login')
-      .send({ name, phone, role })
+      .post('/api/auth/register')
+      .send({ name, phone, password: 'secret123', role })
       .expect(200);
     const body = res.body as { token: string; user: { id: string } };
     return { id: body.user.id, phone, auth: `Bearer ${body.token}` };
@@ -104,16 +104,29 @@ describe('Заявки через Telegram (e2e)', () => {
 
   afterAll(() => app.close());
 
-  it('регистрация: имя + телефон, повторный вход по тому же номеру — тот же пользователь', async () => {
+  it('регистрация по номеру и паролю, вход по тому же номеру — тот же пользователь', async () => {
     const phone = randomPhone();
     const a = await login('Малика', phone.replace('+998', ''));
-    const b = await login('Малика Р.', phone);
-    expect(a.id).toBe(b.id);
+    await http()
+      .post('/api/auth/register')
+      .send({ name: 'Другой', phone, password: 'other123', role: 'BUYER' })
+      .expect(409);
+    await http()
+      .post('/api/auth/login')
+      .send({ phone, password: 'wrong123' })
+      .expect(401);
+    const res = await http()
+      .post('/api/auth/login')
+      .send({ phone: phone.replace('+998', ''), password: 'secret123' })
+      .expect(200);
+    const body = res.body as { token: string; user: Record<string, unknown> };
+    expect(body.user.id).toBe(a.id);
+    expect(body.user).not.toHaveProperty('passwordHash');
     const me = await http()
       .get('/api/me')
-      .set('Authorization', b.auth)
+      .set('Authorization', `Bearer ${body.token}`)
       .expect(200);
-    expect(me.body).toMatchObject({ name: 'Малика Р.', phone, role: 'SELLER' });
+    expect(me.body).toMatchObject({ name: 'Малика', phone, role: 'SELLER' });
 
     // Покупатель не может выставить билет, пока не сменит роль
     const buyer = await login('Покупатель', randomPhone(), 'BUYER');
@@ -137,8 +150,17 @@ describe('Заявки через Telegram (e2e)', () => {
       .expect(200);
     await createListing(buyer.auth);
     await http()
-      .post('/api/auth/login')
-      .send({ name: 'X', phone: '123' })
+      .post('/api/auth/register')
+      .send({ name: 'Xx', phone: '123', password: 'secret123', role: 'BUYER' })
+      .expect(400);
+    await http()
+      .post('/api/auth/register')
+      .send({
+        name: 'Xx',
+        phone: randomPhone(),
+        password: '123',
+        role: 'BUYER',
+      })
       .expect(400);
   });
 

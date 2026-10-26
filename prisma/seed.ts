@@ -2,6 +2,7 @@
 // Запуск: npm run db:seed. Повторный запуск заменяет демо-объявления, не трогая остальные.
 import { Delivery, PrismaClient } from '@prisma/client';
 import data from './seed-data.json';
+import { hashPassword } from '../src/common/utils/password';
 
 const prisma = new PrismaClient();
 // У демо-объявлений нет своего фото: путь-заглушка, админский эндпоинт вернёт 404, обложка — из каталога.
@@ -10,14 +11,24 @@ const DEMO_PROOF = 'seed/demo-proof.jpg';
 async function main() {
   const ids = new Map<string, string>();
   for (const s of data.sellers) {
+    // Пароль есть только у аккаунта для проверки App Store.
+    const passwordHash = s.password
+      ? await hashPassword(s.password)
+      : undefined;
     const user = await prisma.user.upsert({
       where: { phone: s.phone },
-      update: { name: s.name, verified: s.verified, role: 'SELLER' },
+      update: {
+        name: s.name,
+        verified: s.verified,
+        role: 'SELLER',
+        passwordHash,
+      },
       create: {
         phone: s.phone,
         name: s.name,
         verified: s.verified,
         role: 'SELLER',
+        passwordHash,
       },
     });
     ids.set(s.id, user.id);

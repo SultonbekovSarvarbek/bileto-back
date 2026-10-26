@@ -40,15 +40,16 @@ enum RequestStatus {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  phone     String   @unique // +998XXXXXXXXX
-  name      String?
-  role      UserRole @default(BUYER)
-  lang      Lang     @default(ru)
-  verified  Boolean  @default(false) // верификация через MyID
-  deletedAt DateTime? // аккаунт удалён пользователем: имя и телефон стёрты
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(uuid())
+  phone        String    @unique // +998XXXXXXXXX
+  passwordHash String? // scrypt "соль:хеш"; null — аккаунт заведён до паролей, пароль задаётся регистрацией
+  name         String?
+  role         UserRole  @default(BUYER)
+  lang         Lang      @default(ru)
+  verified     Boolean   @default(false) // верификация через MyID
+  deletedAt    DateTime? // аккаунт удалён пользователем: имя и телефон стёрты
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   listings  Listing[]
   requests  PurchaseRequest[]
