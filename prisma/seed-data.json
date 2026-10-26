@@ -35,6 +35,12 @@
    "name": "Нигора Т.",
    "phone": "+998911305566",
    "verified": false
+  },
+  {
+   "id": "u7",
+   "name": "App Review",
+   "phone": "+998900000000",
+   "verified": true
   }
  ],
  "listings": [
@@ -385,6 +391,18 @@
    "delivery": "PICKUP",
    "views": 134,
    "createdAt": "2026-10-24T11:50:00+05:00"
+  },
+  {
+   "eventId": "e1",
+   "title": "Max Richter",
+   "city": "Ташкент",
+   "seller": "u7",
+   "description": "Демо-объявление аккаунта для проверки App Store",
+   "qty": 2,
+   "price": 1800000,
+   "delivery": "DELIVERY",
+   "views": 12,
+   "createdAt": "2026-10-26T10:00:00+05:00"
   }
  ]
 }

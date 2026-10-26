@@ -14,9 +14,11 @@ API для мобильного приложения Bileto — перепрод
 npm install
 cp .env.example .env            # заполнить DATABASE_URL, JWT_SECRET, ADMIN_API_KEY
 npx prisma migrate dev          # создать таблицы
-npm run db:seed                 # демо: 6 продавцов и 29 объявлений на события с афиши iTicket
+npm run db:seed                 # демо: 7 продавцов и 30 объявлений на события с афиши iTicket
 npm run start:dev               # http://localhost:3000/api, Swagger — /docs
 ```
+
+Аккаунт для проверки в App Store (создаётся seed'ом): продавец «App Review», телефон `+998 90 000-00-00`, с одним объявлением. Пароля нет — вход по имени и номеру, без SMS.
 
 Тесты идут на отдельной БД. Создайте `.env.test` — копию `.env` с другой базой (например, `bileto_test`) и `TELEGRAM_POLLING=false`:
 
