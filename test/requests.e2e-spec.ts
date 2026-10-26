@@ -332,4 +332,31 @@ describe('Заявки через Telegram (e2e)', () => {
       })
       .expect(404);
   });
+
+  it('удаление аккаунта: имя и телефон стёрты, объявления сняты, номер можно занять заново', async () => {
+    const seller = await login('Удаляемый');
+    const listing = await createListing(seller.auth);
+
+    await http()
+      .delete('/api/me')
+      .set('Authorization', seller.auth)
+      .expect(204);
+
+    // Старый токен больше не работает
+    await http().get('/api/me').set('Authorization', seller.auth).expect(401);
+
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { id: seller.id },
+    });
+    expect(user).toMatchObject({ name: null, phone: `deleted:${seller.id}` });
+    expect(user.deletedAt).not.toBeNull();
+    const row = await prisma.listing.findUniqueOrThrow({
+      where: { id: listing.id },
+    });
+    expect(row.status).toBe('ARCHIVED');
+
+    // Тот же номер — уже новый аккаунт
+    const again = await login('Снова', seller.phone);
+    expect(again.id).not.toBe(seller.id);
+  });
 });

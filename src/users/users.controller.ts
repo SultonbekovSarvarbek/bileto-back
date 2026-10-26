@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -38,5 +46,32 @@ export class UsersController {
       data: dto,
       select: ME_SELECT,
     });
+  }
+
+  // Удаление аккаунта: стираем имя и телефон, снимаем активные объявления.
+  // Заявки и объявления остаются операторам для разбора споров (см. политику).
+  // Освободившийся номер можно снова зарегистрировать — это будет новый аккаунт.
+  @Delete()
+  @HttpCode(204)
+  async remove(@CurrentUser() user: AuthUser) {
+    await this.prisma.$transaction([
+      this.prisma.listing.updateMany({
+        where: { sellerId: user.id, status: 'ACTIVE' },
+        data: { status: 'ARCHIVED' },
+      }),
+      this.prisma.favorite.deleteMany({ where: { userId: user.id } }),
+      this.prisma.purchaseRequest.updateMany({
+        where: { userId: user.id },
+        data: { userId: null },
+      }),
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          phone: `deleted:${user.id}`,
+          name: null,
+          deletedAt: new Date(),
+        },
+      }),
+    ]);
   }
 }

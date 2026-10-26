@@ -46,6 +46,7 @@ model User {
   role      UserRole @default(BUYER)
   lang      Lang     @default(ru)
   verified  Boolean  @default(false) // верификация через MyID
+  deletedAt DateTime? // аккаунт удалён пользователем: имя и телефон стёрты
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
