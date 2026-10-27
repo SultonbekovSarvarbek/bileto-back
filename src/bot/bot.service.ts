@@ -116,6 +116,7 @@ export class BotService
     { lang: BotLang; saved: boolean; seenAt: number }
   >();
   private readonly admins: Set<string>;
+  private readonly support: string;
 
   constructor(
     private readonly config: ConfigService,
@@ -124,6 +125,9 @@ export class BotService
     private readonly requests: RequestsService,
   ) {
     this.token = config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN') || undefined;
+    this.support = (
+      config.get<string>('SUPPORT_TELEGRAM') || 'happybox_manager'
+    ).replace(/^@/, '');
     this.admins = new Set(
       (config.get<string>('ADMIN_TELEGRAM_IDS') ?? '')
         .split(',')
@@ -334,6 +338,12 @@ export class BotService
         return this.showMyRequests(chat, m.from.id);
       case 'download':
         return this.say(chat, t.appSoon);
+      case 'support':
+        return this.say(chat, t.support, {
+          inline_keyboard: [
+            [{ text: t.writeSupport, url: `https://t.me/${this.support}` }],
+          ],
+        });
       case 'app':
         return this.withUser(chat, m.from, { type: 'password' });
     }

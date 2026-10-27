@@ -21,7 +21,11 @@ const ru = {
     myRequests: '🧾 Мои заявки',
     app: '🔑 Вход в приложение',
     download: '📲 Скачать приложение',
+    support: '💬 Поддержка',
   },
+  support:
+    'Есть вопрос или проблема? Напишите менеджеру Bileto — ответим в Telegram.',
+  writeSupport: '💬 Написать в поддержку',
   appSoon:
     '📲 <b>Приложение Bileto скоро выйдет!</b>\n\nА пока покупайте и продавайте билеты здесь, в боте.',
   cancel: '❌ Отмена',
@@ -140,7 +144,11 @@ const uz: Texts = {
     myRequests: '🧾 Аризаларим',
     app: '🔑 Иловага кириш',
     download: '📲 Иловани юклаб олиш',
+    support: '💬 Қўллаб-қувватлаш',
   },
+  support:
+    'Саволингиз ёки муаммоингиз борми? Bileto менежерига ёзинг — Telegram орқали жавоб берамиз.',
+  writeSupport: '💬 Қўллаб-қувватлашга ёзиш',
   appSoon:
     '📲 <b>Bileto иловаси тез орада чиқади!</b>\n\nҲозирча чипталарни шу ерда, ботда сотиб олинг ва сотинг.',
   cancel: '❌ Бекор қилиш',
@@ -280,7 +288,7 @@ export const menuKeyboard = (t: Texts, admin = false) => ({
   keyboard: [
     [{ text: t.menu.buy }, { text: t.menu.sell }],
     [{ text: t.menu.myListings }, { text: t.menu.myRequests }],
-    [{ text: t.menu.download }],
+    [{ text: t.menu.download }, { text: t.menu.support }],
     [{ text: t.menu.app }, { text: LANG_BUTTON }],
     ...(admin ? [[{ text: STATS_BUTTON }]] : []),
   ],
