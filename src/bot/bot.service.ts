@@ -15,26 +15,29 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
 import { RequestsService } from '../requests/requests.service';
 import { escapeHtml as h } from '../telegram/telegram.service';
-import { normalizeUzPhone } from '../common/utils/phone';
+import { formatPhone, normalizeUzPhone } from '../common/utils/phone';
 import { PHOTOS_DIR } from '../common/utils/upload';
-import { formatSum } from '../common/utils/money';
-import { formatPhone } from '../common/utils/phone';
 import { hashPassword } from '../common/utils/password';
+import { hasContacts } from '../common/utils/contacts';
 import {
-  ASK_CONTACT,
-  CANCEL,
+  BotLang,
   contactKeyboard,
-  DELIVERY,
+  deliveryFrom,
   feedLine,
+  isCancel,
+  isSkip,
+  LANG_BUTTON,
+  LANG_PROMPT,
+  langKeyboard,
   listingCard,
-  LISTING_STATUS,
-  MENU,
+  menuAction,
   menuKeyboard,
-  REQUEST_STATUS,
+  money,
   requestDone,
-  SKIP,
   stepKeyboard,
-  WELCOME,
+  Texts,
+  TEXTS,
+  translateError,
 } from './bot.texts';
 
 type TgUser = { id: number; first_name?: string; last_name?: string };
@@ -92,6 +95,7 @@ const tgName = (u: TgUser) =>
 // (Telegram подтверждает, что контакт свой). Заявки и объявления идут через те же сервисы,
 // что и в приложении, поэтому операторы получают их в обычный чат.
 // Состояние диалогов хранится в памяти: после перезапуска незаконченный шаг начинается заново.
+// Язык (русский по умолчанию или узбекский) хранится в BotChat.
 @Injectable()
 export class BotService
   implements OnApplicationBootstrap, OnApplicationShutdown
@@ -103,6 +107,8 @@ export class BotService
   private readonly states = new Map<number, ChatState>();
   private readonly feeds = new Map<number, { city?: string; q?: string }>();
   private readonly queues = new Map<number, Promise<void>>();
+  // Язык чата; saved = человек уже выбирал язык.
+  private readonly langs = new Map<number, { lang: BotLang; saved: boolean }>();
 
   constructor(
     private readonly config: ConfigService,
@@ -147,13 +153,43 @@ export class BotService
     return json.result;
   }
 
-  private say(chat: number, html: string, markup: object = menuKeyboard) {
+  private t(chat: number): Texts {
+    return TEXTS[this.langs.get(chat)?.lang ?? 'ru'];
+  }
+
+  private async loadLang(chat: number) {
+    let l = this.langs.get(chat);
+    if (!l) {
+      const row = await this.prisma.botChat.findUnique({
+        where: { id: String(chat) },
+      });
+      l = { lang: row?.lang === 'uz' ? 'uz' : 'ru', saved: !!row };
+      this.langs.set(chat, l);
+    }
+    return l;
+  }
+
+  private async setLang(chat: number, lang: BotLang) {
+    this.langs.set(chat, { lang, saved: true });
+    await this.prisma.botChat.upsert({
+      where: { id: String(chat) },
+      update: { lang },
+      create: { id: String(chat), lang },
+    });
+    // Тот же язык — в профиле приложения, если номер уже привязан.
+    await this.prisma.user.updateMany({
+      where: { telegramId: String(chat) },
+      data: { lang },
+    });
+  }
+
+  private say(chat: number, html: string, markup?: object) {
     return this.api('sendMessage', {
       chat_id: chat,
       text: html,
       parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
-      reply_markup: markup,
+      reply_markup: markup ?? menuKeyboard(this.t(chat)),
     });
   }
 
@@ -208,13 +244,12 @@ export class BotService
     if (chat === undefined) return;
     const job = async () => {
       try {
+        await this.loadLang(chat);
         if (u.message) await this.onMessage(u.message);
         else if (u.callback_query) await this.onCallback(u.callback_query);
       } catch (e) {
         this.logger.error(`чат ${chat}: ${String(e)}`);
-        await this.say(chat, 'Что-то пошло не так, попробуйте ещё раз.').catch(
-          () => undefined,
-        );
+        await this.say(chat, this.t(chat).oops).catch(() => undefined);
       }
     };
     const run = (this.queues.get(chat) ?? Promise.resolve()).then(job);
@@ -228,41 +263,50 @@ export class BotService
     if (m.chat.type !== 'private' || !m.from) return;
     const chat = m.chat.id;
     const text = m.text?.trim() ?? '';
+    const t = this.t(chat);
 
     if (text.startsWith('/start')) {
       this.states.delete(chat);
       const arg = text.split(/\s+/)[1];
       if (arg && UUID.test(arg)) return this.showListing(chat, arg);
-      return this.say(chat, WELCOME);
+      // Первый запуск: сначала язык, приветствие — после выбора.
+      if (!this.langs.get(chat)?.saved)
+        return this.say(chat, LANG_PROMPT, langKeyboard);
+      return this.say(chat, t.welcome);
     }
-    if (text === CANCEL || text === '/cancel') {
+    if (text === LANG_BUTTON || text === '/lang') {
       this.states.delete(chat);
-      return this.say(chat, 'Отменено.');
+      return this.say(chat, LANG_PROMPT, langKeyboard);
     }
-    if (Object.values(MENU).includes(text)) this.states.delete(chat);
+    if (isCancel(text) || text === '/cancel') {
+      this.states.delete(chat);
+      return this.say(chat, t.cancelled);
+    }
+    const action = menuAction(text);
+    if (action) this.states.delete(chat);
 
     const state = this.states.get(chat);
     if (state?.kind === 'contact') return this.onContact(m, state.pending);
     if (state?.kind === 'sell') return this.onSellStep(m, state);
     if (state?.kind === 'password') return this.onPassword(m, state.userId);
 
-    switch (text) {
-      case MENU.buy:
+    switch (action) {
+      case 'buy':
         return this.showCities(chat);
-      case MENU.sell:
+      case 'sell':
         return this.startSell(chat);
-      case MENU.myListings:
+      case 'myListings':
         return this.showMyListings(chat, m.from.id);
-      case MENU.myRequests:
+      case 'myRequests':
         return this.showMyRequests(chat, m.from.id);
-      case MENU.app:
+      case 'app':
         return this.withUser(chat, m.from, { type: 'password' });
     }
     if (text && !text.startsWith('/')) {
       this.feeds.set(chat, { q: text.slice(0, 100) });
       return this.showFeed(chat, 1);
     }
-    return this.say(chat, WELCOME);
+    return this.say(chat, t.welcome);
   }
 
   private async onCallback(q: TgCallback) {
@@ -271,6 +315,12 @@ export class BotService
     let notice: string | undefined;
     try {
       switch (kind) {
+        case 'lg':
+          if (arg === 'ru' || arg === 'uz') {
+            await this.setLang(chat, arg);
+            await this.say(chat, this.t(chat).welcome);
+          }
+          break;
         case 'c':
           this.feeds.set(chat, arg ? { city: arg } : {});
           await this.showFeed(chat, 1);
@@ -293,14 +343,14 @@ export class BotService
           break;
         case 'ms':
         case 'ma':
-          notice = await this.closeListing(q.from.id, arg, kind === 'ms');
+          notice = await this.closeListing(chat, q.from.id, arg, kind === 'ms');
           if (q.message)
             await this.showMyListings(chat, q.from.id, q.message.message_id);
           break;
       }
     } catch (e) {
       if (!(e instanceof HttpException)) throw e;
-      notice = e.message;
+      notice = translateError(this.langs.get(chat)?.lang ?? 'ru', e.message);
     } finally {
       await this.api('answerCallbackQuery', {
         callback_query_id: q.id,
@@ -323,27 +373,22 @@ export class BotService
     const user = await this.userByTg(from.id);
     if (user) return this.run(chat, from, user, pending);
     this.states.set(chat, { kind: 'contact', pending });
-    return this.say(chat, ASK_CONTACT, contactKeyboard);
+    const t = this.t(chat);
+    return this.say(chat, t.askContact, contactKeyboard(t));
   }
 
   private async onContact(m: TgMessage, pending: Pending) {
     const chat = m.chat.id;
     const from = m.from!;
     const c = m.contact;
-    if (!c) return this.say(chat, ASK_CONTACT, contactKeyboard);
+    const t = this.t(chat);
+    if (!c) return this.say(chat, t.askContact, contactKeyboard(t));
     if (c.user_id !== from.id)
-      return this.say(
-        chat,
-        'Нужен ваш собственный номер — нажмите кнопку ниже.',
-        contactKeyboard,
-      );
+      return this.say(chat, t.ownNumber, contactKeyboard(t));
     const phone = normalizeUzPhone(c.phone_number);
     if (!phone) {
       this.states.delete(chat);
-      return this.say(
-        chat,
-        'Пока работаем только с номерами Узбекистана (+998). Напишите оператору или попробуйте с другого аккаунта.',
-      );
+      return this.say(chat, t.onlyUz);
     }
 
     // Номер подтверждён Telegram, поэтому привязываем существующий аккаунт с этим номером.
@@ -356,7 +401,12 @@ export class BotService
       this.prisma.user.upsert({
         where: { phone },
         update: { telegramId: tgId },
-        create: { phone, telegramId: tgId, name: tgName(from) || null },
+        create: {
+          phone,
+          telegramId: tgId,
+          name: tgName(from) || null,
+          lang: this.langs.get(chat)?.lang ?? 'ru',
+        },
         select: { id: true, phone: true, name: true, role: true },
       }),
     ]);
@@ -374,45 +424,28 @@ export class BotService
       return this.createRequest(chat, from, user, p.listingId, p.qty);
     if (p.type === 'sell') return this.publish(chat, user, p.draft);
     this.states.set(chat, { kind: 'password', userId: user.id });
-    return this.say(
-      chat,
-      [
-        '🔑 <b>Вход в приложение Bileto</b>',
-        '',
-        `Ваш номер: ${formatPhone(user.phone)}`,
-        'Придумайте пароль (от 6 символов) и отправьте его сообщением. Сообщение с паролем бот сразу удалит.',
-        '',
-        'В приложении нажмите «Войти» и введите этот номер и пароль — там будут ваши объявления и заявки.',
-      ].join('\n'),
-      stepKeyboard(),
-    );
+    const t = this.t(chat);
+    return this.say(chat, t.appLogin(formatPhone(user.phone)), stepKeyboard(t));
   }
 
   // Номер подтверждён Telegram, поэтому пароль можно задать или сменить без старого.
   private async onPassword(m: TgMessage, userId: string) {
     const chat = m.chat.id;
     const password = m.text ?? '';
-    if (!m.text)
-      return this.say(chat, 'Отправьте пароль текстом.', stepKeyboard());
+    const t = this.t(chat);
+    if (!m.text) return this.say(chat, t.passwordAsText, stepKeyboard(t));
     await this.api('deleteMessage', {
       chat_id: chat,
       message_id: m.message_id,
     }).catch(() => undefined);
     if (password.length < 6 || password.length > 72)
-      return this.say(
-        chat,
-        'Пароль — от 6 до 72 символов. Попробуйте ещё раз.',
-        stepKeyboard(),
-      );
+      return this.say(chat, t.passwordLength, stepKeyboard(t));
     await this.prisma.user.update({
       where: { id: userId },
       data: { passwordHash: await hashPassword(password) },
     });
     this.states.delete(chat);
-    return this.say(
-      chat,
-      '✅ Пароль сохранён. Войдите в приложении Bileto по своему номеру и этому паролю.',
-    );
+    return this.say(chat, t.passwordSaved);
   }
 
   // ---------- Покупка ----------
@@ -425,22 +458,18 @@ export class BotService
       orderBy: { _count: { city: 'desc' } },
       take: 10,
     });
-    if (!cities.length)
-      return this.say(chat, 'Пока нет билетов в продаже — загляните позже.');
+    const t = this.t(chat);
+    if (!cities.length) return this.say(chat, t.noTickets);
     const buttons = cities
       .map((c) => ({
         text: `${c.city} (${c._count.city})`,
         callback_data: `c:${c.city}`,
       }))
       .filter((b) => Buffer.byteLength(b.callback_data) <= 64);
-    const rows: Button[][] = [[{ text: '🌍 Все города', callback_data: 'c:' }]];
+    const rows: Button[][] = [[{ text: t.allCities, callback_data: 'c:' }]];
     for (let i = 0; i < buttons.length; i += 2)
       rows.push(buttons.slice(i, i + 2));
-    return this.say(
-      chat,
-      'Выберите город — или напишите название события для поиска.',
-      this.inline(rows),
-    );
+    return this.say(chat, t.chooseCity, this.inline(rows));
   }
 
   private async showFeed(chat: number, page: number, editId?: number) {
@@ -450,22 +479,22 @@ export class BotService
       page,
       limit: FEED_PAGE,
     });
-    if (!total) {
-      const html = filter.q
-        ? `По запросу «${h(filter.q)}» ничего не нашли. Попробуйте короче или выберите «${MENU.buy}».`
-        : 'Билетов пока нет — загляните позже.';
-      return this.say(chat, html);
-    }
+    const t = this.t(chat);
+    if (!total)
+      return this.say(
+        chat,
+        filter.q ? t.nothingFound(h(filter.q), t.menu.buy) : t.noTickets,
+      );
     const pages = Math.ceil(total / FEED_PAGE);
     const header = filter.q
       ? `🔍 «${h(filter.q)}»`
-      : `🎟 Билеты${filter.city ? ` — ${h(filter.city)}` : ''}`;
+      : t.feedTitle(filter.city && h(filter.city));
     const html = [
-      `${header} · ${total} шт., стр. ${page}/${pages}`,
+      `${header} · ${t.feedMeta(total, page, pages)}`,
       '',
-      ...items.map((l, i) => feedLine(i + 1, l)),
+      ...items.map((l, i) => feedLine(t, i + 1, l)),
       '',
-      'Нажмите номер, чтобы открыть объявление.',
+      t.tapNumber,
     ].join('\n');
     const nav: Button[] = [];
     if (page > 1) nav.push({ text: '◀️', callback_data: `p:${page - 1}` });
@@ -489,13 +518,14 @@ export class BotService
   }
 
   private async showListing(chat: number, id: string) {
+    const t = this.t(chat);
     const l = await this.listings.getPublic(id).catch(() => null);
-    if (!l) return this.say(chat, 'Объявление не найдено или снято с продажи.');
+    if (!l) return this.say(chat, t.listingGone);
     const active = l.status === 'ACTIVE' && l.qtyAvailable > 0;
     const markup = this.inline(
-      active ? [[{ text: '🛒 Купить', callback_data: `b:${l.id}` }]] : [],
+      active ? [[{ text: t.buy, callback_data: `b:${l.id}` }]] : [],
     );
-    const caption = listingCard(l);
+    const caption = listingCard(t, l);
     if (l.coverUrl) {
       try {
         return await this.sendPhoto(chat, l.coverUrl, caption, markup);
@@ -534,7 +564,7 @@ export class BotService
   private async chooseQty(chat: number, from: TgUser, id: string) {
     const l = await this.prisma.listing.findUnique({ where: { id } });
     if (!l || l.status !== 'ACTIVE' || l.qtyAvailable < 1)
-      return this.say(chat, 'Этот билет уже недоступен.');
+      return this.say(chat, this.t(chat).unavailable);
     if (l.qtyAvailable === 1)
       return this.withUser(chat, from, { type: 'buy', listingId: id, qty: 1 });
     const n = Math.min(l.qtyAvailable, 10);
@@ -545,7 +575,7 @@ export class BotService
     const rows: Button[][] = [];
     for (let i = 0; i < buttons.length; i += 5)
       rows.push(buttons.slice(i, i + 5));
-    return this.say(chat, 'Сколько билетов нужно?', this.inline(rows));
+    return this.say(chat, this.t(chat).howMany, this.inline(rows));
   }
 
   private async createRequest(
@@ -568,10 +598,20 @@ export class BotService
       );
       return this.say(
         chat,
-        requestDone(r.number, r.listing.title, r.qty, r.unitPrice),
+        requestDone(
+          this.t(chat),
+          r.number,
+          r.listing.title,
+          r.qty,
+          r.unitPrice,
+        ),
       );
     } catch (e) {
-      if (e instanceof HttpException) return this.say(chat, h(e.message));
+      if (e instanceof HttpException)
+        return this.say(
+          chat,
+          h(translateError(this.langs.get(chat)?.lang ?? 'ru', e.message)),
+        );
       throw e;
     }
   }
@@ -579,17 +619,14 @@ export class BotService
   private async showMyRequests(chat: number, tgId: number) {
     const user = await this.userByTg(tgId);
     const rows = user ? (await this.requests.mine(user.id)).slice(0, 15) : [];
-    if (!rows.length)
-      return this.say(
-        chat,
-        'Заявок пока нет. Найдите билет через «🎟 Купить билет».',
-      );
+    const t = this.t(chat);
+    if (!rows.length) return this.say(chat, t.noRequests(t.menu.buy));
     const html = [
-      '🧾 <b>Мои заявки</b>',
+      t.myRequests,
       '',
       ...rows.map(
         (r) =>
-          `#${r.number} <b>${h(r.listing.title)}</b>\n    ${r.qty} шт. · ${formatSum(r.total)} · ${REQUEST_STATUS[r.status]}`,
+          `#${r.number} <b>${h(r.listing.title)}</b>\n    ${r.qty} ${t.pcs} · ${money(t, r.total)} · ${t.requestStatus[r.status]}`,
       ),
     ].join('\n');
     return this.say(chat, html);
@@ -599,11 +636,8 @@ export class BotService
 
   private async startSell(chat: number) {
     this.states.set(chat, { kind: 'sell', step: 'title', draft: {} });
-    return this.say(
-      chat,
-      '💰 <b>Новое объявление</b>\n\nНа какое событие билет? Например: «Концерт Шахзоды, 15 ноября».',
-      stepKeyboard(),
-    );
+    const t = this.t(chat);
+    return this.say(chat, t.sellIntro, stepKeyboard(t));
   }
 
   private async onSellStep(
@@ -613,36 +647,31 @@ export class BotService
     const chat = m.chat.id;
     const text = m.text?.trim() ?? '';
     const d = state.draft;
+    const t = this.t(chat);
+    const retry = (html: string, options?: string[][]) =>
+      this.say(chat, html, stepKeyboard(t, options));
     const next = (step: SellStep, html: string, options?: string[][]) => {
       state.step = step;
-      return this.say(chat, html, stepKeyboard(options));
+      return retry(html, options);
     };
+    const deliveryOptions = [[t.delivery.DELIVERY, t.delivery.PICKUP]];
 
     switch (state.step) {
       case 'title':
-        if (text.length < 2 || text.length > 120)
-          return this.say(
-            chat,
-            'Название — от 2 до 120 символов.',
-            stepKeyboard(),
-          );
+        if (text.length < 2 || text.length > 120) return retry(t.titleLength);
+        if (hasContacts(text)) return retry(t.noContacts);
         d.title = text;
-        return next('city', 'Город?', await this.cityOptions());
+        return next('city', t.askCity, await this.cityOptions());
       case 'city':
-        if (text.length < 2 || text.length > 60)
-          return this.say(chat, 'Напишите город.', stepKeyboard());
+        if (text.length < 2 || text.length > 60) return retry(t.cityError);
         d.city = text;
-        return next('price', 'Цена за 1 билет в сумах? Например: 250000');
+        return next('price', t.askPrice);
       case 'price': {
         const price = Number(text.replace(/\D/g, ''));
         if (!price || price < 1000 || price > 100_000_000)
-          return this.say(
-            chat,
-            'Цена — число от 1 000 до 100 000 000 сум.',
-            stepKeyboard(),
-          );
+          return retry(t.priceError);
         d.price = price;
-        return next('qty', 'Сколько билетов продаёте?', [
+        return next('qty', t.askQty, [
           ['1', '2', '3', '4', '5'],
           ['6', '7', '8', '9', '10'],
         ]);
@@ -650,46 +679,28 @@ export class BotService
       case 'qty': {
         const qty = Number(text);
         if (!Number.isInteger(qty) || qty < 1 || qty > 10)
-          return this.say(chat, 'От 1 до 10 билетов.', stepKeyboard());
+          return retry(t.qtyError);
         d.qty = qty;
-        return next('delivery', 'Как покупатель получит билет?', [
-          [DELIVERY.DELIVERY, DELIVERY.PICKUP],
-        ]);
+        return next('delivery', t.askDelivery, deliveryOptions);
       }
       case 'delivery': {
-        const found = (Object.keys(DELIVERY) as Delivery[]).find(
-          (k) => DELIVERY[k] === text,
-        );
-        if (!found)
-          return this.say(
-            chat,
-            'Выберите вариант кнопкой.',
-            stepKeyboard([[DELIVERY.DELIVERY, DELIVERY.PICKUP]]),
-          );
+        const found = deliveryFrom(text);
+        if (!found) return retry(t.useButtons, deliveryOptions);
         d.delivery = found;
-        return next(
-          'description',
-          'Описание: сектор, ряд, место, формат билета (электронный/бумажный). Контакты не пишите — связь через оператора.',
-          [[SKIP]],
-        );
+        return next('description', t.askDescription, [[t.skip]]);
       }
       case 'description':
-        if (text !== SKIP) {
+        if (!isSkip(text)) {
           if (!text || text.length > 1000)
-            return this.say(
-              chat,
-              'Описание — до 1000 символов.',
-              stepKeyboard([[SKIP]]),
-            );
+            return retry(t.descriptionLength, [[t.skip]]);
+          // Контакты не вырезаем молча, а просим переписать: связь — только через оператора.
+          if (hasContacts(text)) return retry(t.noContacts, [[t.skip]]);
           d.description = text;
         }
-        return next(
-          'photo',
-          '📷 Пришлите фото билета или афиши (как фото, не файлом). Оно станет обложкой объявления.',
-        );
+        return next('photo', t.askPhoto);
       case 'photo': {
         const photo = m.photo?.at(-1);
-        if (!photo) return this.say(chat, 'Нужна фотография.', stepKeyboard());
+        if (!photo) return retry(t.needPhoto);
         d.photoFileId = photo.file_id;
         this.states.delete(chat);
         return this.withUser(chat, m.from!, { type: 'sell', draft: d });
@@ -732,19 +743,17 @@ export class BotService
       },
       path,
     );
+    const t = this.t(chat);
     return this.say(
       chat,
       [
-        '✅ <b>Объявление опубликовано</b>',
+        t.published,
         '',
-        `<b>${h(l.title)}</b> — ${l.qty} шт. × ${formatSum(l.price)}`,
+        `<b>${h(l.title)}</b> — ${l.qty} ${t.pcs} × ${money(t, l.price)}`,
         '',
-        'Когда найдётся покупатель, оператор Bileto позвонит вам.',
+        t.publishedHint,
         ...(this.username
-          ? [
-              '',
-              `Ссылка, чтобы поделиться: https://t.me/${this.username}?start=${l.id}`,
-            ]
+          ? ['', `${t.shareLink} https://t.me/${this.username}?start=${l.id}`]
           : []),
       ].join('\n'),
     );
@@ -753,25 +762,22 @@ export class BotService
   private async showMyListings(chat: number, tgId: number, editId?: number) {
     const user = await this.userByTg(tgId);
     const rows = user ? (await this.listings.mine(user.id)).slice(0, 10) : [];
-    if (!rows.length)
-      return this.say(
-        chat,
-        `Объявлений пока нет. Создайте через «${MENU.sell}».`,
-      );
+    const t = this.t(chat);
+    if (!rows.length) return this.say(chat, t.noListings(t.menu.sell));
     const html = [
-      '📋 <b>Мои объявления</b>',
+      t.myListings,
       '',
       ...rows.map(
         (l, i) =>
-          `${i + 1}. <b>${h(l.title)}</b>\n    ${l.qtyAvailable}/${l.qty} шт. · ${formatSum(l.price)} · ${LISTING_STATUS[l.status]}`,
+          `${i + 1}. <b>${h(l.title)}</b>\n    ${l.qtyAvailable}/${l.qty} ${t.pcs} · ${money(t, l.price)} · ${t.listingStatus[l.status]}`,
       ),
     ].join('\n');
     const buttons: Button[][] = rows
       .map((l, i) => ({ l, n: i + 1 }))
       .filter(({ l }) => l.status === 'ACTIVE')
       .map(({ l, n }) => [
-        { text: `${n}. ✅ Продал сам`, callback_data: `ms:${l.id}` },
-        { text: `${n}. 🗑 Снять`, callback_data: `ma:${l.id}` },
+        { text: `${n}. ${t.soldMyself}`, callback_data: `ms:${l.id}` },
+        { text: `${n}. ${t.archive}`, callback_data: `ma:${l.id}` },
       ]);
     if (editId)
       return this.api('editMessageText', {
@@ -784,11 +790,17 @@ export class BotService
     return this.say(chat, html, this.inline(buttons));
   }
 
-  private async closeListing(tgId: number, id: string, sold: boolean) {
+  private async closeListing(
+    chat: number,
+    tgId: number,
+    id: string,
+    sold: boolean,
+  ) {
+    const t = this.t(chat);
     const user = await this.userByTg(tgId);
-    if (!user) return 'Объявление не найдено';
+    if (!user) return t.listingNotFound;
     if (sold) await this.listings.markSold(user.id, id);
     else await this.listings.archive(user.id, id);
-    return sold ? 'Отмечено как проданное' : 'Объявление снято';
+    return sold ? t.markedSold : t.archived;
   }
 }

@@ -16,6 +16,13 @@ const MESSENGER_HANDLE = new RegExp(
 const DANGLING =
   /(?:^|[\s,.;])(?:tg|тг|telegram+|телеграм+|tel|тел|telefon|телефон|instagram|instagaram|алоқа|aloqa|связь|писать|пишите(?: или звоните)?|звоните|nomer|номер)\s*[:\-–]\s*(?=[\s,.;]*(?:$|\n))/gimu;
 
+// Есть ли в тексте контакты: телефон, @ник, ссылка или ник после «tg:».
+export const hasContacts = (text: string) =>
+  [PHONE, URL, HANDLE, MESSENGER_HANDLE].some((re) => {
+    re.lastIndex = 0; // у глобальных регулярок test() запоминает позицию
+    return re.test(text);
+  });
+
 export function stripContacts(text: string): string {
   return text
     .replace(URL, '')
