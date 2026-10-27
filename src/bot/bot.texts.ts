@@ -19,7 +19,10 @@ const ru = {
     myListings: '📋 Мои объявления',
     myRequests: '🧾 Мои заявки',
     app: '🔑 Вход в приложение',
+    download: '📲 Скачать приложение',
   },
+  appSoon:
+    '📲 <b>Приложение Bileto скоро выйдет!</b>\n\nА пока покупайте и продавайте билеты здесь, в боте.',
   cancel: '❌ Отмена',
   skip: 'Пропустить',
   delivery: {
@@ -135,7 +138,10 @@ const uz: Texts = {
     myListings: '📋 Эълонларим',
     myRequests: '🧾 Аризаларим',
     app: '🔑 Иловага кириш',
+    download: '📲 Иловани юклаб олиш',
   },
+  appSoon:
+    '📲 <b>Bileto иловаси тез орада чиқади!</b>\n\nҲозирча чипталарни шу ерда, ботда сотиб олинг ва сотинг.',
   cancel: '❌ Бекор қилиш',
   skip: 'Ўтказиб юбориш',
   delivery: {
@@ -272,6 +278,7 @@ export const menuKeyboard = (t: Texts) => ({
   keyboard: [
     [{ text: t.menu.buy }, { text: t.menu.sell }],
     [{ text: t.menu.myListings }, { text: t.menu.myRequests }],
+    [{ text: t.menu.download }],
     [{ text: t.menu.app }, { text: LANG_BUTTON }],
   ],
   resize_keyboard: true,

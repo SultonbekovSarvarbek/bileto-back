@@ -299,6 +299,8 @@ export class BotService
         return this.showMyListings(chat, m.from.id);
       case 'myRequests':
         return this.showMyRequests(chat, m.from.id);
+      case 'download':
+        return this.say(chat, t.appSoon);
       case 'app':
         return this.withUser(chat, m.from, { type: 'password' });
     }
