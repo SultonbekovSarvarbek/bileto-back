@@ -70,6 +70,7 @@ export class UsersController {
           phone: `deleted:${user.id}`,
           name: null,
           passwordHash: null,
+          telegramId: null,
           deletedAt: new Date(),
         },
       }),

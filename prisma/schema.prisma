@@ -43,6 +43,7 @@ model User {
   id           String    @id @default(uuid())
   phone        String    @unique // +998XXXXXXXXX
   passwordHash String? // scrypt "соль:хеш"; null — аккаунт заведён до паролей, пароль задаётся регистрацией
+  telegramId   String?   @unique // вход через публичного Telegram-бота: номер подтверждён контактом
   name         String?
   role         UserRole  @default(BUYER)
   lang         Lang      @default(ru)

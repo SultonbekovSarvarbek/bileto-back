@@ -40,6 +40,11 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { phone } });
     if (existing?.passwordHash)
       throw new ConflictException('Номер уже зарегистрирован — войдите');
+    // Номер подтверждён в Telegram-боте: пароль задаётся только там, иначе аккаунт займёт кто угодно.
+    if (existing?.telegramId)
+      throw new ConflictException(
+        'Номер уже привязан к боту Bileto в Telegram — нажмите там «🔑 Вход в приложение», задайте пароль и войдите',
+      );
     const data = {
       name: name.trim(),
       role,
@@ -51,6 +56,7 @@ export class AuthService {
       create: { phone, ...data },
       select: USER_SELECT,
     });
+    await this.claimRequests(user.id, phone);
     return this.session(user);
   }
 
@@ -64,6 +70,14 @@ export class AuthService {
     if (!passwordHash || !(await verifyPassword(password, passwordHash)))
       throw new UnauthorizedException('Неверный номер или пароль');
     return this.session({ ...found, passwordHash: undefined });
+  }
+
+  // Заявки, оставленные без входа с этого номера, становятся видны в «Мои заявки».
+  claimRequests(userId: string, phone: string) {
+    return this.prisma.purchaseRequest.updateMany({
+      where: { phone, userId: null },
+      data: { userId },
+    });
   }
 
   private phone(raw: string) {

@@ -381,4 +381,35 @@ describe('Заявки через Telegram (e2e)', () => {
     const again = await login('Снова', seller.phone);
     expect(again.id).not.toBe(seller.id);
   });
+  it('связь по номеру: заявки без входа видны после регистрации; номер из бота занять нельзя', async () => {
+    const seller = await login('Продавец');
+    const listing = await createListing(seller.auth);
+    const phone = randomPhone();
+    await http()
+      .post('/api/requests')
+      .send({ listingId: listing.id, qty: 1, name: 'Гость', phone })
+      .expect(201);
+
+    const buyer = await login('Гость', phone, 'BUYER');
+    const mine = await http()
+      .get('/api/me/requests')
+      .set('Authorization', buyer.auth)
+      .expect(200);
+    expect(mine.body).toHaveLength(1);
+
+    // Пользователь из Telegram-бота: пароль задаётся только в боте
+    const botPhone = randomPhone();
+    await prisma.user.create({
+      data: { phone: botPhone, telegramId: String(Date.now()) },
+    });
+    await http()
+      .post('/api/auth/register')
+      .send({
+        name: 'Чужой',
+        phone: botPhone,
+        password: 'secret123',
+        role: 'BUYER',
+      })
+      .expect(409);
+  });
 });

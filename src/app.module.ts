@@ -8,6 +8,7 @@ import { ListingsModule } from './listings/listings.module';
 import { RequestsModule } from './requests/requests.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { AdminModule } from './admin/admin.module';
+import { BotModule } from './bot/bot.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -21,6 +22,7 @@ import { AppController } from './app.controller';
     RequestsModule,
     FavoritesModule,
     AdminModule,
+    BotModule,
   ],
   controllers: [AppController],
 })
