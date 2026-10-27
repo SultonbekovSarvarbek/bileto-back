@@ -28,6 +28,7 @@ import {
   isSkip,
   LANG_BUTTON,
   LANG_PROMPT,
+  STATS_BUTTON,
   langKeyboard,
   listingCard,
   menuAction,
@@ -39,6 +40,7 @@ import {
   TEXTS,
   translateError,
 } from './bot.texts';
+import { statsText } from './bot.stats';
 
 type TgUser = { id: number; first_name?: string; last_name?: string };
 type TgMessage = {
@@ -85,6 +87,7 @@ type ChatState =
 type BotUser = { id: string; phone: string; name: string | null; role: string };
 
 const FEED_PAGE = 5;
+const SEEN_EVERY = 3_600_000; // lastSeenAt пишем не чаще раза в час
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const tgName = (u: TgUser) =>
@@ -107,8 +110,12 @@ export class BotService
   private readonly states = new Map<number, ChatState>();
   private readonly feeds = new Map<number, { city?: string; q?: string }>();
   private readonly queues = new Map<number, Promise<void>>();
-  // Язык чата; saved = человек уже выбирал язык.
-  private readonly langs = new Map<number, { lang: BotLang; saved: boolean }>();
+  // Язык чата; saved = человек уже бывал в боте (язык спрашиваем при первом визите).
+  private readonly langs = new Map<
+    number,
+    { lang: BotLang; saved: boolean; seenAt: number }
+  >();
+  private readonly admins: Set<string>;
 
   constructor(
     private readonly config: ConfigService,
@@ -117,6 +124,12 @@ export class BotService
     private readonly requests: RequestsService,
   ) {
     this.token = config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN') || undefined;
+    this.admins = new Set(
+      (config.get<string>('ADMIN_TELEGRAM_IDS') ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
   }
 
   onApplicationBootstrap() {
@@ -157,20 +170,32 @@ export class BotService
     return TEXTS[this.langs.get(chat)?.lang ?? 'ru'];
   }
 
+  private isAdmin(chat: number) {
+    return this.admins.has(String(chat));
+  }
+
+  // Язык чата из кэша или БД; заодно отмечает визит для статистики.
   private async loadLang(chat: number) {
+    const id = String(chat);
     let l = this.langs.get(chat);
     if (!l) {
-      const row = await this.prisma.botChat.findUnique({
-        where: { id: String(chat) },
-      });
-      l = { lang: row?.lang === 'uz' ? 'uz' : 'ru', saved: !!row };
+      const row = await this.prisma.botChat.findUnique({ where: { id } });
+      if (!row) await this.prisma.botChat.create({ data: { id } });
+      l = { lang: row?.lang === 'uz' ? 'uz' : 'ru', saved: !!row, seenAt: 0 };
       this.langs.set(chat, l);
+    }
+    if (Date.now() - l.seenAt > SEEN_EVERY) {
+      l.seenAt = Date.now();
+      await this.prisma.botChat.update({
+        where: { id },
+        data: { lastSeenAt: new Date() },
+      });
     }
     return l;
   }
 
   private async setLang(chat: number, lang: BotLang) {
-    this.langs.set(chat, { lang, saved: true });
+    this.langs.set(chat, { lang, saved: true, seenAt: Date.now() });
     await this.prisma.botChat.upsert({
       where: { id: String(chat) },
       update: { lang },
@@ -189,9 +214,13 @@ export class BotService
       text: html,
       parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
-      reply_markup: markup ?? menuKeyboard(this.t(chat)),
+      reply_markup: markup ?? menuKeyboard(this.t(chat), this.isAdmin(chat)),
     });
   }
+
+  private readonly statsMarkup = {
+    inline_keyboard: [[{ text: '🔄 Обновить', callback_data: 'st' }]],
+  };
 
   private inline(buttons: Button[][]) {
     return { inline_keyboard: buttons };
@@ -274,6 +303,10 @@ export class BotService
         return this.say(chat, LANG_PROMPT, langKeyboard);
       return this.say(chat, t.welcome);
     }
+    if ((text === STATS_BUTTON || text === '/stats') && this.isAdmin(chat)) {
+      this.states.delete(chat);
+      return this.say(chat, await statsText(this.prisma), this.statsMarkup);
+    }
     if (text === LANG_BUTTON || text === '/lang') {
       this.states.delete(chat);
       return this.say(chat, LANG_PROMPT, langKeyboard);
@@ -317,6 +350,17 @@ export class BotService
     let notice: string | undefined;
     try {
       switch (kind) {
+        case 'st':
+          if (this.isAdmin(chat) && q.message)
+            await this.api('editMessageText', {
+              chat_id: chat,
+              message_id: q.message.message_id,
+              text: await statsText(this.prisma),
+              parse_mode: 'HTML',
+              reply_markup: this.statsMarkup,
+            }).catch(() => undefined); // цифры не изменились
+          notice = 'Обновлено';
+          break;
         case 'lg':
           if (arg === 'ru' || arg === 'uz') {
             await this.setLang(chat, arg);

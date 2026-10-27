@@ -11,6 +11,7 @@ import {
 export type BotLang = 'ru' | 'uz';
 export const LANGS: BotLang[] = ['ru', 'uz'];
 export const LANG_BUTTON = '🌐 Тил / Язык';
+export const STATS_BUTTON = '📊 Статистика';
 
 const ru = {
   menu: {
@@ -274,12 +275,14 @@ export function translateError(lang: BotLang, message: string) {
 export const money = (t: Texts, n: number) =>
   formatSum(n).replace(/сум$/, t.sum);
 
-export const menuKeyboard = (t: Texts) => ({
+// Админам (ADMIN_TELEGRAM_IDS) — ещё кнопка статистики.
+export const menuKeyboard = (t: Texts, admin = false) => ({
   keyboard: [
     [{ text: t.menu.buy }, { text: t.menu.sell }],
     [{ text: t.menu.myListings }, { text: t.menu.myRequests }],
     [{ text: t.menu.download }],
     [{ text: t.menu.app }, { text: LANG_BUTTON }],
+    ...(admin ? [[{ text: STATS_BUTTON }]] : []),
   ],
   resize_keyboard: true,
   is_persistent: true,

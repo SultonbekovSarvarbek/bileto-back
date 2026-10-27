@@ -119,10 +119,11 @@ model Favorite {
   @@id([userId, listingId])
 }
 
-// Чат публичного Telegram-бота: язык запоминается и до того, как человек поделился номером.
+// Чат публичного Telegram-бота: язык и визиты — и до того, как человек поделился номером.
 model BotChat {
   id        String   @id // Telegram ID пользователя
-  lang      Lang     @default(ru)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  lang       Lang     @default(ru)
+  lastSeenAt DateTime @default(now()) // для статистики активных, обновляется не чаще раза в час
+  createdAt  DateTime @default(now()) // первый визит
+  updatedAt  DateTime @updatedAt
 }
