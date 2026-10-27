@@ -126,7 +126,7 @@ export class BotService
   ) {
     this.token = config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN') || undefined;
     this.support = (
-      config.get<string>('SUPPORT_TELEGRAM') || 'happybox_manager'
+      config.get<string>('SUPPORT_TELEGRAM') || 'bileto_manager'
     ).replace(/^@/, '');
     this.admins = new Set(
       (config.get<string>('ADMIN_TELEGRAM_IDS') ?? '')
