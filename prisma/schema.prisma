@@ -121,9 +121,22 @@ model Favorite {
 
 // Чат публичного Telegram-бота: язык и визиты — и до того, как человек поделился номером.
 model BotChat {
-  id        String   @id // Telegram ID пользователя
-  lang       Lang     @default(ru)
-  lastSeenAt DateTime @default(now()) // для статистики активных, обновляется не чаще раза в час
-  createdAt  DateTime @default(now()) // первый визит
-  updatedAt  DateTime @updatedAt
+  id          String   @id // Telegram ID пользователя
+  lang        Lang     @default(ru)
+  lastSeenAt  DateTime @default(now()) // для статистики активных, обновляется не чаще раза в час
+  firstSource String? // метка ?start=…, с которой человек пришёл в бота впервые; не перезаписывается
+  lastSource  String? // метка последнего перехода по ссылке
+  createdAt   DateTime @default(now()) // первый визит
+  updatedAt   DateTime @updatedAt
+}
+
+// Переход в бота по ссылке с меткой (?start=sell_zivert_a): одна строка на каждый /start.
+model BotStart {
+  id        Int      @id @default(autoincrement())
+  chatId    String // Telegram ID пользователя
+  source    String
+  isNew     Boolean // первый визит человека в бота
+  createdAt DateTime @default(now())
+
+  @@index([source, createdAt])
 }

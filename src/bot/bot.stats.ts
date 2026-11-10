@@ -16,6 +16,50 @@ const STATUS: Record<RequestStatus, string> = {
   CANCELLED: '❌ отменены',
 };
 
+type SourceRow = {
+  source: string;
+  clicks: number;
+  users: number;
+  sellers: number;
+};
+
+// По меткам рекламных ссылок: переходы, новые пользователи и сколько из них разместили билет.
+async function sourceLines(prisma: PrismaClient) {
+  const rows = await prisma.$queryRaw<SourceRow[]>`
+    SELECT s."source",
+      s."clicks"::int AS "clicks",
+      COALESCE(c."users", 0)::int AS "users",
+      COALESCE(c."sellers", 0)::int AS "sellers"
+    FROM (
+      SELECT "source", COUNT(*) AS "clicks" FROM "BotStart" GROUP BY "source"
+    ) s
+    LEFT JOIN (
+      SELECT c."firstSource" AS "source",
+        COUNT(*) AS "users",
+        COUNT(*) FILTER (WHERE EXISTS (
+          SELECT 1 FROM "User" u
+          JOIN "Listing" l ON l."sellerId" = u."id"
+          WHERE u."telegramId" = c."id" AND l."createdAt" >= c."createdAt"
+        )) AS "sellers"
+      FROM "BotChat" c
+      WHERE c."firstSource" IS NOT NULL
+      GROUP BY c."firstSource"
+    ) c ON c."source" = s."source"
+    ORDER BY "sellers" DESC, "users" DESC, "clicks" DESC, s."source"
+    LIMIT 20`;
+  if (!rows.length) return [];
+  return [
+    '',
+    '<b>📣 Реклама</b> (переходы → новые → разместили билет)',
+    ...rows.map((r) => {
+      const rate = r.users
+        ? ` (${Math.round((r.sellers / r.users) * 100)}%)`
+        : '';
+      return `<code>${r.source}</code>: ${r.clicks} → ${r.users} → <b>${r.sellers}</b>${rate}`;
+    }),
+  ];
+}
+
 export async function statsText(prisma: PrismaClient) {
   const now = Date.now();
   const day = new Date(now - DAY);
@@ -81,6 +125,7 @@ export async function statsText(prisma: PrismaClient) {
     }),
   ]);
 
+  const sources = await sourceLines(prisma);
   const count = (s: RequestStatus) =>
     // groupBy внутри $transaction теряет точный тип _count
     (byStatus.find((r) => r.status === s)?._count as { status: number })
@@ -107,6 +152,7 @@ export async function statsText(prisma: PrismaClient) {
     `Активны: ${activeDay} за 24 ч · ${activeWeek} за 7 дн.`,
     `Язык: 🇷🇺 ${chats - uzChats} · 🇺🇿 ${uzChats}`,
     `Поделились номером: ${withPhone}`,
+    ...sources,
     '',
     '<b>👥 Аккаунты</b> (бот + приложение)',
     `Всего: ${users} · с паролем: ${withPassword} · продавцов: ${sellers}`,

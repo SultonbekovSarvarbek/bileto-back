@@ -89,6 +89,8 @@ type BotUser = { id: string; phone: string; name: string | null; role: string };
 const FEED_PAGE = 5;
 const SEEN_EVERY = 3_600_000; // lastSeenAt пишем не чаще раза в час
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Метка источника в ссылке t.me/бот?start=метка (реклама): Telegram пропускает только такие символы.
+const SOURCE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const tgName = (u: TgUser) =>
   [u.first_name, u.last_name].filter(Boolean).join(' ').trim().slice(0, 60);
@@ -113,8 +115,10 @@ export class BotService
   // Язык чата; saved = человек уже бывал в боте (язык спрашиваем при первом визите).
   private readonly langs = new Map<
     number,
-    { lang: BotLang; saved: boolean; seenAt: number }
+    { lang: BotLang; saved: boolean; seenAt: number; fresh?: boolean }
   >();
+  // Новички по ссылке ?start=sell…: после выбора языка сразу продажа, без приветствия.
+  private readonly sellAfterLang = new Set<number>();
   private readonly admins: Set<string>;
   private readonly support: string;
 
@@ -185,7 +189,13 @@ export class BotService
     if (!l) {
       const row = await this.prisma.botChat.findUnique({ where: { id } });
       if (!row) await this.prisma.botChat.create({ data: { id } });
-      l = { lang: row?.lang === 'uz' ? 'uz' : 'ru', saved: !!row, seenAt: 0 };
+      // fresh — самое первое обращение чата: только тогда метка считается первым источником.
+      l = {
+        lang: row?.lang === 'uz' ? 'uz' : 'ru',
+        saved: !!row,
+        seenAt: 0,
+        fresh: !row,
+      };
       this.langs.set(chat, l);
     }
     if (Date.now() - l.seenAt > SEEN_EVERY) {
@@ -210,6 +220,27 @@ export class BotService
       where: { telegramId: String(chat) },
       data: { lang },
     });
+  }
+
+  // Переход по ссылке с меткой: строка в BotStart и метка в BotChat (первая — только у новичка).
+  // Сбой учёта не должен мешать человеку пользоваться ботом.
+  private async trackStart(chat: number, source: string) {
+    const id = String(chat);
+    const isNew = !!this.langs.get(chat)?.fresh;
+    try {
+      await this.prisma.$transaction([
+        this.prisma.botStart.create({ data: { chatId: id, source, isNew } }),
+        this.prisma.botChat.update({
+          where: { id },
+          data: { lastSource: source, ...(isNew && { firstSource: source }) },
+        }),
+      ]);
+      this.logger.log(
+        `start ${source} · чат ${id}${isNew ? ' · новый' : ''} · ${new Date().toISOString()}`,
+      );
+    } catch (e) {
+      this.logger.error(`метка ${source}, чат ${id}: ${String(e)}`);
+    }
   }
 
   private say(chat: number, html: string, markup?: object) {
@@ -283,6 +314,9 @@ export class BotService
       } catch (e) {
         this.logger.error(`чат ${chat}: ${String(e)}`);
         await this.say(chat, this.t(chat).oops).catch(() => undefined);
+      } finally {
+        const l = this.langs.get(chat);
+        if (l) l.fresh = false;
       }
     };
     const run = (this.queues.get(chat) ?? Promise.resolve()).then(job);
@@ -300,12 +334,19 @@ export class BotService
 
     if (text.startsWith('/start')) {
       this.states.delete(chat);
+      this.sellAfterLang.delete(chat);
       const arg = text.split(/\s+/)[1];
       if (arg && UUID.test(arg)) return this.showListing(chat, arg);
-      // Первый запуск: сначала язык, приветствие — после выбора.
-      if (!this.langs.get(chat)?.saved)
+      // Всё остальное — метка источника; незнакомая метка просто ведёт к приветствию.
+      const source = arg && SOURCE.test(arg) ? arg : undefined;
+      if (source) await this.trackStart(chat, source);
+      const sell = source === 'sell' || !!source?.startsWith('sell_');
+      // Первый запуск: сначала язык, приветствие или продажа — после выбора.
+      if (!this.langs.get(chat)?.saved) {
+        if (sell) this.sellAfterLang.add(chat);
         return this.say(chat, LANG_PROMPT, langKeyboard);
-      return this.say(chat, t.welcome);
+      }
+      return sell ? this.startSell(chat) : this.say(chat, t.welcome);
     }
     if ((text === STATS_BUTTON || text === '/stats') && this.isAdmin(chat)) {
       this.states.delete(chat);
@@ -374,7 +415,8 @@ export class BotService
         case 'lg':
           if (arg === 'ru' || arg === 'uz') {
             await this.setLang(chat, arg);
-            await this.say(chat, this.t(chat).welcome);
+            if (this.sellAfterLang.delete(chat)) await this.startSell(chat);
+            else await this.say(chat, this.t(chat).welcome);
           }
           break;
         case 'c':
