@@ -18,6 +18,7 @@ import {
 import { normalizeUzPhone } from '../common/utils/phone';
 import { priceBreakdown } from '../common/utils/money';
 import { CreateRequestDto } from './dto/create-request.dto';
+import { softDeleteListing } from '../listings/listing.delete';
 import {
   listingButtons,
   listingText,
@@ -49,7 +50,7 @@ export class RequestsService implements OnModuleInit {
     const listing = await this.prisma.listing.findUnique({
       where: { id: dto.listingId },
     });
-    if (!listing || listing.status !== 'ACTIVE')
+    if (!listing || listing.status !== 'ACTIVE' || listing.deletedAt)
       throw new NotFoundException('Объявление недоступно');
     if (userId && listing.sellerId === userId)
       throw new BadRequestException('Нельзя купить свой билет');
@@ -185,20 +186,43 @@ export class RequestsService implements OnModuleInit {
       }
     }
 
-    if (kind === 'l' && id && action === 'reject') {
-      const l = await this.prisma.listing.update({
+    const LISTING_ACTIONS = ['reject', 'delete', 'delete!', 'keep'];
+    if (kind === 'l' && id && action && LISTING_ACTIONS.includes(action)) {
+      const seller = { select: { name: true, phone: true } };
+      let l = await this.prisma.listing.findUnique({
         where: { id },
-        data: { status: 'REJECTED', rejectReason: `Снято оператором: ${who}` },
-        include: { seller: { select: { name: true, phone: true } } },
+        include: { seller },
       });
+      if (!l) return 'Объявление не найдено';
+      let notice = 'Готово';
+      if (l.deletedAt) {
+        notice = 'Объявление уже удалено';
+      } else if (action === 'reject') {
+        l = await this.prisma.listing.update({
+          where: { id },
+          data: {
+            status: 'REJECTED',
+            rejectReason: `Снято оператором: ${who}`,
+          },
+          include: { seller },
+        });
+        notice = 'Объявление снято';
+      } else if (action === 'delete') {
+        notice = 'Удалить объявление? Вернуть его кнопкой будет нельзя';
+      } else if (action === 'delete!') {
+        [, l] = await softDeleteListing(this.prisma, l, {
+          rejectReason: `Удалено оператором: ${who}`,
+        });
+        notice = 'Объявление удалено';
+      }
       if (q.message)
         await this.telegram.edit(
           q.message.message_id,
-          listingText(l, who),
-          listingButtons(l, true),
+          listingText(l),
+          listingButtons(l, action === 'delete'),
           !!l.proofPath, // без фото объявление ушло обычным текстом
         );
-      return 'Объявление снято';
+      return notice;
     }
     return 'Неизвестная команда';
   }

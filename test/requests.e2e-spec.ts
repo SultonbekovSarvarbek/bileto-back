@@ -340,6 +340,81 @@ describe('Заявки через Telegram (e2e)', () => {
       .expect(200);
   });
 
+  it('продавец удаляет объявление: оно пропадает из «Моих» и ленты, операторам остаётся', async () => {
+    const seller = await login('Дилноза');
+    const listing = await createListing(seller.auth);
+    const other = await login('Жасур');
+
+    await http()
+      .post(`/api/listings/${listing.id}/delete`)
+      .set('Authorization', other.auth)
+      .expect(403);
+    await http()
+      .post(`/api/listings/${listing.id}/delete`)
+      .set('Authorization', seller.auth)
+      .expect(204);
+
+    const mine = await http()
+      .get('/api/me/listings')
+      .set('Authorization', seller.auth)
+      .expect(200);
+    expect(mine.body).toEqual([]);
+    await http()
+      .get(`/api/listings/${listing.id}`)
+      .set('Authorization', seller.auth)
+      .expect(404);
+    await http()
+      .post(`/api/listings/${listing.id}/delete`)
+      .set('Authorization', seller.auth)
+      .expect(404);
+
+    const admin = await http()
+      .get('/api/admin/listings')
+      .set('X-Admin-Key', process.env.ADMIN_API_KEY!)
+      .expect(200);
+    expect(
+      (admin.body as { id: string; status: string }[]).find(
+        (l) => l.id === listing.id,
+      ),
+    ).toMatchObject({ status: 'ARCHIVED' });
+  });
+
+  it('оператор удаляет объявление кнопкой в Telegram и через админ-API', async () => {
+    const seller = await login('Санжар');
+    const a = await createListing(seller.auth);
+    const b = await createListing(seller.auth);
+
+    // первое нажатие только переспрашивает
+    await requests.handleCallback(press(`l:${a.id}:delete`));
+    await http().get(`/api/listings/${a.id}`).expect(200);
+    await requests.handleCallback(press(`l:${a.id}:keep`));
+    await http().get(`/api/listings/${a.id}`).expect(200);
+
+    expect(await requests.handleCallback(press(`l:${a.id}:delete!`))).toBe(
+      'Объявление удалено',
+    );
+    await http().get(`/api/listings/${a.id}`).expect(404);
+    expect(await requests.handleCallback(press(`l:${a.id}:reject`))).toBe(
+      'Объявление уже удалено',
+    );
+
+    await http().post(`/api/admin/listings/${b.id}/delete`).expect(401);
+    await http()
+      .post(`/api/admin/listings/${b.id}/delete`)
+      .set('X-Admin-Key', process.env.ADMIN_API_KEY!)
+      .expect(200);
+    await http()
+      .post(`/api/admin/listings/${b.id}/restore`)
+      .set('X-Admin-Key', process.env.ADMIN_API_KEY!)
+      .expect(404);
+
+    const mine = await http()
+      .get('/api/me/listings')
+      .set('Authorization', seller.auth)
+      .expect(200);
+    expect(mine.body).toEqual([]);
+  });
+
   it('объявление со страницы события хранит eventId; продавец отмечает «Продано»', async () => {
     const seller = await login('Малика');
     const listing = await createListing(seller.auth, { eventId: 'e4' });

@@ -20,6 +20,7 @@ import { AdminKeyGuard } from '../common/guards/admin-key.guard';
 import { PHOTOS_DIR, PROOFS_DIR } from '../common/utils/upload';
 import { PrismaService } from '../prisma/prisma.service';
 import { RejectListingDto } from './dto/admin.dto';
+import { softDeleteListing } from '../listings/listing.delete';
 
 // Основная работа операторов — в Telegram. Эти эндпоинты — запасной доступ и база для будущей веб-админки.
 @ApiTags('admin')
@@ -74,6 +75,7 @@ export class AdminController {
   @HttpCode(200)
   async restore(@Param('id', ParseUUIDPipe) id: string) {
     const l = await this.prisma.listing.findUniqueOrThrow({ where: { id } });
+    if (l.deletedAt) throw new NotFoundException(); // удалённое не возвращаем
     return this.prisma.listing.update({
       where: { id },
       data: {
@@ -81,6 +83,19 @@ export class AdminController {
         rejectReason: null,
       },
     });
+  }
+
+  /** Удалить объявление: скрыто от продавца и покупателей, запись остаётся в базе */
+  @Post('listings/:id/delete')
+  @HttpCode(200)
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    const l = await this.prisma.listing.findUnique({ where: { id } });
+    if (!l) throw new NotFoundException();
+    if (l.deletedAt) return l;
+    const [, deleted] = await softDeleteListing(this.prisma, l, {
+      rejectReason: 'Удалено оператором: админ-API',
+    });
+    return deleted;
   }
 
   /** Все заявки — на случай, если Telegram был недоступен */

@@ -98,6 +98,18 @@ export class ListingsController {
     return this.listings.markSold(user.id, id);
   }
 
+  /** Удалить объявление: пропадает из «Моих» и ленты, операторам остаётся */
+  @Post('listings/:id/delete')
+  @HttpCode(204)
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.listings.remove(user.id, id);
+  }
+
   /** Мои объявления */
   @Get('me/listings')
   @ApiBearerAuth()

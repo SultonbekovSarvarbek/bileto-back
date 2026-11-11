@@ -377,7 +377,7 @@
   const myListing = (l) => `<div class="item">
       <div class="item-head"><div class="item-title">${esc(l.title)}</div><span class="badge ${L_BADGE[l.status]}">${esc(t.lStatus[l.status])}</span></div>
       <div class="sub">📍 ${esc(l.city)} · ${money(l.price)} · ${esc(t.soldOf(l.qty - (l.status === 'SOLD' ? 0 : l.qtyAvailable), l.qty))} · ${esc(t.views(l.views))}</div>
-      ${l.status === 'ACTIVE' ? `<div class="row"><button class="btn ghost small" data-sold="${esc(l.id)}">✅ ${esc(t.markSold)}</button><button class="btn ghost small danger" data-archive="${esc(l.id)}">${esc(t.archive)}</button></div>` : ''}
+      <div class="row">${l.status === 'ACTIVE' ? `<button class="btn ghost small" data-sold="${esc(l.id)}">✅ ${esc(t.markSold)}</button><button class="btn ghost small" data-archive="${esc(l.id)}">${esc(t.archive)}</button>` : ''}<button class="btn ghost small danger" data-remove="${esc(l.id)}">🗑 ${esc(t.remove)}</button></div>
     </div>`;
 
   const myRequest = (r) => `<div class="item">
@@ -385,10 +385,12 @@
       <div class="sub">${r.qty} ${esc(t.pcs)} · ${esc(t.total.toLowerCase())} ${money(r.total)}</div>
     </div>`;
 
-  async function closeListing(id, sold) {
-    if (!(await confirmBox(sold ? t.confirmSold : t.confirmArchive))) return;
+  // how: 'sold' — продано, 'archive' — снять с продажи, 'remove' — удалить совсем
+  async function closeListing(id, how) {
+    const ask = { sold: t.confirmSold, archive: t.confirmArchive, remove: t.confirmRemove }[how];
+    if (!(await confirmBox(ask))) return;
     try {
-      await (sold ? api('POST', `/listings/${id}/sold`) : api('DELETE', '/listings/' + id));
+      await (how === 'archive' ? api('DELETE', '/listings/' + id) : api('POST', `/listings/${id}/${how === 'sold' ? 'sold' : 'delete'}`));
       S.feed.items = [];
       render();
     } catch (e) {
@@ -420,8 +422,9 @@
     if (d.delivery) { S.draft.delivery = d.delivery; return renderSell(); }
     if (d.setcity) { e.preventDefault(); S.draft.city = d.setcity; return renderSell(); }
     if (d.mytab) { S.myTab = d.mytab; return render(); }
-    if (d.sold) return closeListing(d.sold, true);
-    if (d.archive) return closeListing(d.archive, false);
+    if (d.sold) return closeListing(d.sold, 'sold');
+    if (d.archive) return closeListing(d.archive, 'archive');
+    if (d.remove) return closeListing(d.remove, 'remove');
     if (d.goto) {
       const [name, sub] = d.goto.split(':');
       if (sub) S.myTab = sub;

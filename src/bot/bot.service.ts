@@ -476,6 +476,24 @@ export class BotService
           if (q.message)
             await this.showMyListings(chat, q.from.id, q.message.message_id);
           break;
+        case 'md': // «Удалить» — сначала переспрашиваем
+          if (q.message)
+            await this.showMyListings(
+              chat,
+              q.from.id,
+              q.message.message_id,
+              arg,
+            );
+          break;
+        case 'mx':
+          notice = await this.removeListing(chat, q.from.id, arg);
+          if (q.message)
+            await this.showMyListings(chat, q.from.id, q.message.message_id);
+          break;
+        case 'ml':
+          if (q.message)
+            await this.showMyListings(chat, q.from.id, q.message.message_id);
+          break;
       }
     } catch (e) {
       if (!(e instanceof HttpException)) throw e;
@@ -912,11 +930,39 @@ export class BotService
     );
   }
 
-  private async showMyListings(chat: number, tgId: number, editId?: number) {
+  private async showMyListings(
+    chat: number,
+    tgId: number,
+    editId?: number,
+    confirmId?: string, // объявление, удаление которого надо подтвердить
+  ) {
     const user = await this.userByTg(tgId);
     const rows = user ? (await this.listings.mine(user.id)).slice(0, 10) : [];
     const t = this.t(chat);
-    if (!rows.length) return this.say(chat, t.noListings(t.menu.sell));
+    if (!rows.length) {
+      const empty = t.noListings(t.menu.sell);
+      if (editId)
+        return this.api('editMessageText', {
+          chat_id: chat,
+          message_id: editId,
+          text: empty,
+        }).catch(() => undefined);
+      return this.say(chat, empty);
+    }
+    const asked = confirmId && rows.find((l) => l.id === confirmId);
+    if (asked && editId)
+      return this.api('editMessageText', {
+        chat_id: chat,
+        message_id: editId,
+        text: h(t.removeAsk(asked.title)),
+        parse_mode: 'HTML',
+        reply_markup: this.inline([
+          [
+            { text: t.removeYes, callback_data: `mx:${asked.id}` },
+            { text: t.removeNo, callback_data: 'ml' },
+          ],
+        ]),
+      }).catch(() => undefined);
     const html = [
       t.myListings,
       '',
@@ -925,13 +971,19 @@ export class BotService
           `${i + 1}. <b>${h(l.title)}</b>\n    ${l.qtyAvailable}/${l.qty} ${t.pcs} · ${money(t, l.price)} · ${t.listingStatus[l.status]}`,
       ),
     ].join('\n');
-    const buttons: Button[][] = rows
-      .map((l, i) => ({ l, n: i + 1 }))
-      .filter(({ l }) => l.status === 'ACTIVE')
-      .map(({ l, n }) => [
-        { text: `${n}. ${t.soldMyself}`, callback_data: `ms:${l.id}` },
-        { text: `${n}. ${t.archive}`, callback_data: `ma:${l.id}` },
-      ]);
+    const buttons: Button[][] = rows.flatMap((l, i) => {
+      const n = i + 1;
+      const remove = { text: `${n}. ${t.remove}`, callback_data: `md:${l.id}` };
+      return l.status === 'ACTIVE'
+        ? [
+            [
+              { text: `${n}. ${t.soldMyself}`, callback_data: `ms:${l.id}` },
+              { text: `${n}. ${t.archive}`, callback_data: `ma:${l.id}` },
+            ],
+            [remove],
+          ]
+        : [[remove]];
+    });
     if (editId)
       return this.api('editMessageText', {
         chat_id: chat,
@@ -955,5 +1007,13 @@ export class BotService
     if (sold) await this.listings.markSold(user.id, id);
     else await this.listings.archive(user.id, id);
     return sold ? t.markedSold : t.archived;
+  }
+
+  private async removeListing(chat: number, tgId: number, id: string) {
+    const t = this.t(chat);
+    const user = await this.userByTg(tgId);
+    if (!user) return t.listingNotFound;
+    await this.listings.remove(user.id, id);
+    return t.removed;
   }
 }

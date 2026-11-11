@@ -43,7 +43,7 @@ export class FavoritesController {
     @Param('listingId', ParseUUIDPipe) listingId: string,
   ) {
     const exists = await this.prisma.listing.count({
-      where: { id: listingId },
+      where: { id: listingId, deletedAt: null },
     });
     if (!exists) throw new NotFoundException('Объявление не найдено');
     await this.prisma.favorite.upsert({

@@ -83,9 +83,21 @@ type ListingForMessage = Prisma.ListingGetPayload<{
   include: { seller: { select: { name: true; phone: true } } };
 }>;
 
-export function listingText(l: ListingForMessage, rejectedBy?: string) {
+// Пометка в заголовке: кто из операторов снял или удалил объявление.
+function listingMark(l: ListingForMessage) {
+  const what = l.deletedAt
+    ? '🗑 удалено'
+    : l.status === 'REJECTED'
+      ? '⛔ снято'
+      : null;
+  if (!what) return '';
+  const by = l.rejectReason?.match(/оператором: (.+)$/)?.[1];
+  return ` — ${what}${by ? ` (${h(by)})` : ''}`;
+}
+
+export function listingText(l: ListingForMessage) {
   return [
-    `🆕 <b>Новое объявление</b>${rejectedBy ? ` — ⛔ снято (${h(rejectedBy)})` : ''}`,
+    `🆕 <b>Новое объявление</b>${listingMark(l)}`,
     '',
     `<b>${h(l.title)}</b>`,
     place(l),
@@ -97,10 +109,19 @@ export function listingText(l: ListingForMessage, rejectedBy?: string) {
   ].join('\n');
 }
 
-export const listingButtons = (
-  l: { id: string },
-  rejected = false,
-): InlineButton[][] =>
-  rejected
-    ? []
-    : [[{ text: '⛔ Снять объявление', callback_data: `l:${l.id}:reject` }]];
+// «Удалить» сначала переспрашивает (confirm): вернуть объявление кнопкой нельзя.
+export function listingButtons(
+  l: { id: string; status: string; deletedAt: Date | null },
+  confirm = false,
+): InlineButton[][] {
+  if (l.deletedAt) return [];
+  const b = (text: string, action: string): InlineButton => ({
+    text,
+    callback_data: `l:${l.id}:${action}`,
+  });
+  if (confirm) return [[b('🗑 Да, удалить', 'delete!'), b('↩️ Отмена', 'keep')]];
+  return [
+    ...(l.status === 'REJECTED' ? [] : [[b('⛔ Снять объявление', 'reject')]]),
+    [b('🗑 Удалить объявление', 'delete')],
+  ];
+}

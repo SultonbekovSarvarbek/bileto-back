@@ -75,6 +75,7 @@ model Listing {
   coverUrl     String? // обложка: фото продавца (/photos/…) или афиша iticket.uz у импортированных
   sourceUrl    String?       @unique // импорт с OLX: оператор связывается с продавцом там
   views        Int           @default(0)
+  deletedAt    DateTime? // продавец удалил объявление: скрыто от всех, кроме операторов
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 

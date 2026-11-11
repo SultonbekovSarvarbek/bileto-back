@@ -17,6 +17,7 @@ import { UpdateListingDto } from './dto/update-listing.dto';
 import { FeedQueryDto } from './dto/feed-query.dto';
 import { LISTING_PUBLIC_SELECT, toPublicListing } from './listing.view';
 import { stripContacts } from '../common/utils/contacts';
+import { softDeleteListing } from './listing.delete';
 
 // Пустое описание после чистки контактов храним как null.
 const cleanDescription = (s?: string) => (s && stripContacts(s)) || null;
@@ -34,6 +35,7 @@ export class ListingsService {
     const query = q?.trim();
     const where: Prisma.ListingWhereInput = {
       status: 'ACTIVE',
+      deletedAt: null,
       qtyAvailable: { gt: 0 },
       ...(city ? { city } : {}),
       ...(query
@@ -59,8 +61,8 @@ export class ListingsService {
   }
 
   async getPublic(id: string, viewerId?: string) {
-    const row = await this.prisma.listing.findUnique({
-      where: { id },
+    const row = await this.prisma.listing.findFirst({
+      where: { id, deletedAt: null },
       select: { ...LISTING_PUBLIC_SELECT, sellerId: true },
     });
     const visible =
@@ -119,7 +121,7 @@ export class ListingsService {
   mine(sellerId: string, status?: ListingStatus) {
     return this.prisma.listing
       .findMany({
-        where: { sellerId, ...(status ? { status } : {}) },
+        where: { sellerId, deletedAt: null, ...(status ? { status } : {}) },
         select: LISTING_PUBLIC_SELECT,
         orderBy: { createdAt: 'desc' },
       })
@@ -130,6 +132,7 @@ export class ListingsService {
     const listing = await this.prisma.listing.findUnique({ where: { id } });
     if (!listing) throw new NotFoundException('Объявление не найдено');
     if (listing.sellerId !== sellerId) throw new ForbiddenException();
+    if (listing.deletedAt) throw new NotFoundException('Объявление не найдено');
     return listing;
   }
 
@@ -190,5 +193,12 @@ export class ListingsService {
       where: { id },
       data: { status: 'ARCHIVED' },
     });
+  }
+
+  // Удаление продавцом: объявление пропадает из «Моих», ленты и избранного.
+  // Запись и заявки остаются операторам для разбора споров.
+  async remove(sellerId: string, id: string) {
+    const listing = await this.ownOrThrow(sellerId, id);
+    await softDeleteListing(this.prisma, listing);
   }
 }
