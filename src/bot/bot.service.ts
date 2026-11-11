@@ -264,7 +264,12 @@ export class BotService
       text: html,
       parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
-      reply_markup: markup ?? menuKeyboard(this.t(chat), this.isAdmin(chat)),
+      // С мини-приложением кнопок меню в чате нет: остаётся только «Открыть Bileto».
+      reply_markup:
+        markup ??
+        (this.miniApp
+          ? { remove_keyboard: true }
+          : menuKeyboard(this.t(chat), this.isAdmin(chat))),
     });
   }
 
