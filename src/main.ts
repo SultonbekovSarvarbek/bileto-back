@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { timingSafeEqual } from 'crypto';
@@ -38,7 +39,22 @@ async function bootstrap() {
   });
   app.useStaticAssets(PHOTOS_DIR, { prefix: PHOTOS_PREFIX, maxAge: '7d' });
   // Мини-приложение Telegram: статика без сборки, открывается из бота (MINI_APP_URL).
-  app.useStaticAssets(join(process.cwd(), 'miniapp'), { prefix: '/app/' });
+  // Cloudflare велит браузеру держать .js/.css 4 часа, поэтому страница ссылается на них
+  // с версией запуска сервера: после деплоя все сразу получают свежие файлы.
+  const miniapp = join(process.cwd(), 'miniapp');
+  const version = Date.now().toString(36);
+  app.use('/app', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path !== '/') return next();
+    if (!req.originalUrl.startsWith('/app/')) return res.redirect('/app/');
+    const html = readFileSync(join(miniapp, 'index.html'), 'utf8');
+    res
+      .type('html')
+      .set('Cache-Control', 'no-cache')
+      .send(
+        html.replace(/"(app\.css|i18n\.js|app\.js)"/g, `"$1?v=${version}"`),
+      );
+  });
+  app.useStaticAssets(miniapp, { prefix: '/app/' });
 
   const swaggerUser = process.env.SWAGGER_USER;
   const swaggerPassword = process.env.SWAGGER_PASSWORD;
