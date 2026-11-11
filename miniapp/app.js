@@ -154,7 +154,7 @@
   function renderFeed() {
     const f = S.feed;
     $app.innerHTML = `
-      <div class="top"><div class="logo">Bile<i>to</i></div>${langSwitch()}</div>
+      <div class="top"><div class="logo">Bilet<i>o</i></div>${langSwitch()}</div>
       <div class="search">${ICONS.search}<input id="q" type="search" enterkeyhint="search" placeholder="${esc(t.search)}" value="${esc(f.q)}"></div>
       <div class="chips">
         <button class="chip ${f.city ? '' : 'on'}" data-city="">${esc(t.allCities)}</button>
