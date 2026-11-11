@@ -164,6 +164,22 @@ describe('Заявки через Telegram (e2e)', () => {
       .expect(400);
   });
 
+  it('объявление без фото: создаётся без обложки и уходит операторам текстом', async () => {
+    const seller = await login();
+    const res = await http()
+      .post('/api/listings')
+      .set('Authorization', seller.auth)
+      .field('title', 'Без фото')
+      .field('city', 'Ташкент')
+      .field('qty', '1')
+      .field('price', '200000')
+      .field('delivery', 'PICKUP')
+      .expect(201);
+    expect((res.body as { coverUrl: string | null }).coverUrl).toBeNull();
+    expect(tg.last().html).toContain('Без фото');
+    expect(tg.last().photo).toBeUndefined();
+  });
+
   it('объявление уходит операторам с фото; номер продавца в ленте размыт', async () => {
     const seller = await login('Тимур');
     const listing = await createListing(seller.auth, {

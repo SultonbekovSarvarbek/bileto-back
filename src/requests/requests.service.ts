@@ -196,7 +196,7 @@ export class RequestsService implements OnModuleInit {
           q.message.message_id,
           listingText(l, who),
           listingButtons(l, true),
-          true,
+          !!l.proofPath, // без фото объявление ушло обычным текстом
         );
       return 'Объявление снято';
     }

@@ -846,11 +846,12 @@ export class BotService
           if (hasContacts(text)) return retry(t.noContacts, [[t.skip]]);
           d.description = text;
         }
-        return next('photo', t.askPhoto);
+        return next('photo', t.askPhoto, [[t.skip]]);
       case 'photo': {
+        // Фото необязательно: «Пропустить» публикует объявление без обложки.
         const photo = m.photo?.at(-1);
-        if (!photo) return retry(t.needPhoto);
-        d.photoFileId = photo.file_id;
+        if (!photo && !isSkip(text)) return retry(t.needPhoto, [[t.skip]]);
+        d.photoFileId = photo?.file_id;
         this.states.delete(chat);
         return this.withUser(chat, m.from!, { type: 'sell', draft: d });
       }
@@ -871,9 +872,12 @@ export class BotService
   }
 
   private async publish(chat: number, user: BotUser, d: Draft) {
-    await mkdir(PHOTOS_DIR, { recursive: true });
-    const path = join(PHOTOS_DIR, `${randomUUID()}.jpg`);
-    await writeFile(path, await this.download(d.photoFileId!));
+    let path: string | undefined;
+    if (d.photoFileId) {
+      await mkdir(PHOTOS_DIR, { recursive: true });
+      path = join(PHOTOS_DIR, `${randomUUID()}.jpg`);
+      await writeFile(path, await this.download(d.photoFileId));
+    }
     // Кто выставил билет через бота — продавец.
     if (user.role !== 'SELLER')
       await this.prisma.user.update({

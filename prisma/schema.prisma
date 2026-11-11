@@ -69,7 +69,7 @@ model Listing {
   qtyAvailable Int // сколько ещё не продано
   price        Int // цена за 1 билет, сум
   delivery     Delivery
-  proofPath    String // файл фото продавца: уходит модераторам в Telegram
+  proofPath    String? // файл фото продавца (необязательное): уходит модераторам в Telegram
   status       ListingStatus @default(ACTIVE)
   rejectReason String?
   coverUrl     String? // обложка: фото продавца (/photos/…) или афиша iticket.uz у импортированных

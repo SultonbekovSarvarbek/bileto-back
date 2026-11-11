@@ -227,6 +227,28 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
     expect(line).toBe(`<code>${source}</code>: 3 → 2 → <b>1</b> (50%)`);
   });
 
+  it('продажа без фото: «Пропустить» публикует объявление без обложки', async () => {
+    const chat = newChat();
+    await say(chat, '/start sell');
+    await press(chat, 'lg:ru');
+    for (const text of [`Без фото ${run}`, 'Ташкент', '300000', '1'])
+      await say(chat, text);
+    await say(chat, TEXTS.ru.delivery.PICKUP);
+    expect(await say(chat, TEXTS.ru.skip)).toEqual([TEXTS.ru.askPhoto]);
+    expect(await say(chat, 'нет фото')).toEqual([TEXTS.ru.needPhoto]);
+    await say(chat, TEXTS.ru.skip);
+    await send(chat, {
+      contact: {
+        user_id: chat,
+        phone_number: '+99895' + String(chat).padStart(7, '0').slice(-7),
+      },
+    });
+    const listing = await prisma.listing.findFirstOrThrow({
+      where: { title: `Без фото ${run}` },
+    });
+    expect(listing).toMatchObject({ proofPath: null, coverUrl: null });
+  });
+
   it('мини-приложение: вход по подписи Telegram, аккаунт — после «Поделиться номером»', async () => {
     const chat = newChat();
     const login = (data: string) =>

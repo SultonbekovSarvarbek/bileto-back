@@ -13,7 +13,6 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
@@ -45,7 +44,7 @@ export class ListingsController {
     return this.listings.getPublic(id, user?.id);
   }
 
-  /** Создать объявление. multipart/form-data: поля CreateListingDto + файл "proof" (обложка: фото билета или любое фото, обязательно) */
+  /** Создать объявление. multipart/form-data: поля CreateListingDto + файл "proof" (обложка: фото билета или афиши, необязательно) */
   @Post('listings')
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
@@ -57,9 +56,7 @@ export class ListingsController {
     @Body() dto: CreateListingDto,
     @UploadedFile() proof?: Express.Multer.File,
   ) {
-    if (!proof)
-      throw new BadRequestException('Добавьте фото билета или обложку');
-    return this.listings.create(user.id, dto, proof.path);
+    return this.listings.create(user.id, dto, proof?.path);
   }
 
   /** Изменить объявление. Можно приложить новую обложку "proof". */

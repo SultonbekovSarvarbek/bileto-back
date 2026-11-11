@@ -314,7 +314,6 @@
     if (city.length < 2) return sellError(t.eCity, '[data-f=city]');
     if (!(price >= 1000 && price <= 100000000)) return sellError(t.ePrice, '[data-f=price]');
     if (hasContacts(description)) return sellError(t.eContacts, '[data-f=description]');
-    if (!d.photo) return sellError(t.ePhoto, '#photo');
     document.getElementById('err').hidden = true;
     if (!(await needUser())) return;
 
@@ -330,7 +329,7 @@
       form.append('qty', String(d.qty));
       form.append('delivery', d.delivery);
       if (description) form.append('description', description);
-      form.append('proof', d.photo);
+      if (d.photo) form.append('proof', d.photo);
       await api('POST', '/listings', form);
       haptic('success');
       if (d.photoUrl) URL.revokeObjectURL(d.photoUrl);

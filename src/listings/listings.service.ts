@@ -78,13 +78,14 @@ export class ListingsService {
     return toPublicListing(row);
   }
 
-  async create(sellerId: string, dto: CreateListingDto, proofPath: string) {
+  // Фото необязательно: без него объявление выходит без обложки.
+  async create(sellerId: string, dto: CreateListingDto, proofPath?: string) {
     const seller = await this.prisma.user.findUniqueOrThrow({
       where: { id: sellerId },
       select: { role: true },
     });
     if (seller.role !== 'SELLER') {
-      await unlink(proofPath).catch(() => undefined);
+      if (proofPath) await unlink(proofPath).catch(() => undefined);
       throw new ForbiddenException(
         'Продавать билеты могут только продавцы — смените роль в профиле',
       );
@@ -95,19 +96,23 @@ export class ListingsService {
         description: cleanDescription(dto.description),
         sellerId,
         proofPath,
-        coverUrl: photoUrl(proofPath),
+        coverUrl: proofPath ? photoUrl(proofPath) : null,
         qtyAvailable: dto.qty,
       },
       include: { seller: { select: { name: true, phone: true } } },
     });
-    // Операторы видят каждое новое объявление с фото и могут снять подделку.
-    await this.telegram
-      .sendPhoto(proofPath, listingText(created), listingButtons(created))
-      .catch((e: unknown) =>
-        this.logger.error(
-          `Объявление ${created.id} не ушло в Telegram: ${String(e)}`,
-        ),
-      );
+    // Операторы видят каждое новое объявление (с фото, если оно есть) и могут снять подделку.
+    const text = listingText(created);
+    const buttons = listingButtons(created);
+    await (
+      proofPath
+        ? this.telegram.sendPhoto(proofPath, text, buttons)
+        : this.telegram.send(text, buttons)
+    ).catch((e: unknown) =>
+      this.logger.error(
+        `Объявление ${created.id} не ушло в Telegram: ${String(e)}`,
+      ),
+    );
     return this.getPublic(created.id, sellerId);
   }
 
@@ -164,7 +169,8 @@ export class ListingsService {
       },
       select: LISTING_PUBLIC_SELECT,
     });
-    if (newProofPath) await unlink(listing.proofPath).catch(() => undefined);
+    if (newProofPath && listing.proofPath)
+      await unlink(listing.proofPath).catch(() => undefined);
     return toPublicListing(row);
   }
 

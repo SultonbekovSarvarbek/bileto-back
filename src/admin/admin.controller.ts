@@ -49,7 +49,7 @@ export class AdminController {
       where: { id },
       select: { proofPath: true },
     });
-    if (!listing) throw new NotFoundException();
+    if (!listing?.proofPath) throw new NotFoundException();
     const file = resolve(listing.proofPath);
     const inside = (dir: string) => !relative(dir, file).startsWith('..');
     if (!inside(PROOFS_DIR) && !inside(PHOTOS_DIR))
