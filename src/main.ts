@@ -37,6 +37,8 @@ async function bootstrap() {
     maxAge: '7d',
   });
   app.useStaticAssets(PHOTOS_DIR, { prefix: PHOTOS_PREFIX, maxAge: '7d' });
+  // Мини-приложение Telegram: статика без сборки, открывается из бота (MINI_APP_URL).
+  app.useStaticAssets(join(process.cwd(), 'miniapp'), { prefix: '/app/' });
 
   const swaggerUser = process.env.SWAGGER_USER;
   const swaggerPassword = process.env.SWAGGER_PASSWORD;

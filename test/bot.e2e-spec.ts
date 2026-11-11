@@ -1,11 +1,35 @@
+import { createHmac } from 'crypto';
+import request from 'supertest';
+import type { App } from 'supertest/types';
 import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
+import { configureApp } from '../src/main';
 import { BotService } from '../src/bot/bot.service';
 import { statsText } from '../src/bot/bot.stats';
 import { TEXTS, LANG_PROMPT } from '../src/bot/bot.texts';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TelegramService } from '../src/telegram/telegram.service';
+
+// Токен ненастоящий: им только подписываем initData мини-приложения, в сеть бот не ходит.
+const BOT_TOKEN = '1:TEST';
+process.env.TELEGRAM_PUBLIC_BOT_TOKEN = BOT_TOKEN;
+
+// Строка initData, как её формирует Telegram для мини-приложения.
+function initData(id: number, token = BOT_TOKEN, ageSeconds = 0) {
+  const params = new URLSearchParams({
+    auth_date: String(Math.floor(Date.now() / 1000) - ageSeconds),
+    query_id: 'AAE',
+    user: JSON.stringify({ id, first_name: 'Тест', language_code: 'ru' }),
+  });
+  const check = [...params.entries()]
+    .map(([k, v]) => `${k}=${v}`)
+    .sort()
+    .join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(token).digest();
+  params.set('hash', createHmac('sha256', secret).update(check).digest('hex'));
+  return params.toString();
+}
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
@@ -22,7 +46,7 @@ type BotInternals = {
 };
 
 describe('Публичный бот: метки ?start= (e2e)', () => {
-  let app: INestApplication;
+  let app: INestApplication<App>;
   let prisma: PrismaService;
   let bot: BotInternals;
   let sent: Sent[] = [];
@@ -74,6 +98,7 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
       })
       .compile();
     app = mod.createNestApplication();
+    configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
     bot = app.get<BotInternals>(BotService);
@@ -200,5 +225,57 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
       .split('\n')
       .find((l) => l.includes(source));
     expect(line).toBe(`<code>${source}</code>: 3 → 2 → <b>1</b> (50%)`);
+  });
+
+  it('мини-приложение: вход по подписи Telegram, аккаунт — после «Поделиться номером»', async () => {
+    const chat = newChat();
+    const login = (data: string) =>
+      request(app.getHttpServer())
+        .post('/api/auth/telegram')
+        .send({ initData: data });
+    await say(chat, '/start');
+    await press(chat, 'lg:uz');
+
+    // Номера ещё нет: вход проходит, но без токена; язык — как в боте.
+    const guest = await login(initData(chat)).expect(200);
+    expect(guest.body).toEqual({ token: null, user: null, lang: 'uz' });
+
+    // Контакт приходит боту вне сценария — так его отправляет мини-приложение.
+    const phone = '+99894' + String(chat).padStart(7, '0').slice(-7);
+    expect(
+      await send(chat, { contact: { user_id: chat + 1, phone_number: phone } }),
+    ).toEqual([TEXTS.uz.ownNumber]);
+    expect(
+      await send(chat, { contact: { user_id: chat, phone_number: phone } }),
+    ).toEqual([TEXTS.uz.phoneLinked]);
+
+    const res = await login(initData(chat)).expect(200);
+    const body = res.body as { token: string; user: { phone: string } };
+    expect(body.user.phone).toBe(phone);
+    const me = await request(app.getHttpServer())
+      .get('/api/me')
+      .set('Authorization', `Bearer ${body.token}`)
+      .expect(200);
+    expect(me.body).toMatchObject({ phone, lang: 'uz' });
+  });
+
+  it('мини-приложение: чужая, просроченная и испорченная подпись — 401', async () => {
+    const login = (data: string) =>
+      request(app.getHttpServer())
+        .post('/api/auth/telegram')
+        .send({ initData: data });
+    const chat = newChat();
+    await login(initData(chat, '2:OTHER')).expect(401);
+    await login(initData(chat, BOT_TOKEN, 2 * 86_400)).expect(401);
+    await login(initData(chat).replace('%D0%A2', '%D0%A3')).expect(401);
+    await login('hash=00').expect(401);
+  });
+
+  it('мини-приложение: настройки для экранов', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/miniapp/config')
+      .expect(200);
+    expect(res.body).toMatchObject({ feePercent: 7, commissionPercent: 10 });
+    expect(Array.isArray((res.body as { cities: string[] }).cities)).toBe(true);
   });
 });

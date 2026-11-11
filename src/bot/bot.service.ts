@@ -121,6 +121,8 @@ export class BotService
   private readonly sellAfterLang = new Set<number>();
   private readonly admins: Set<string>;
   private readonly support: string;
+  // Адрес мини-приложения (https://…/app/); пока не задан — бот работает только перепиской.
+  private readonly miniApp?: string;
 
   constructor(
     private readonly config: ConfigService,
@@ -132,6 +134,7 @@ export class BotService
     this.support = (
       config.get<string>('SUPPORT_TELEGRAM') || 'bileto_manager'
     ).replace(/^@/, '');
+    this.miniApp = config.get<string>('MINI_APP_URL') || undefined;
     this.admins = new Set(
       (config.get<string>('ADMIN_TELEGRAM_IDS') ?? '')
         .split(',')
@@ -143,6 +146,18 @@ export class BotService
   onApplicationBootstrap() {
     if (this.token && this.config.get<string>('TELEGRAM_POLLING') !== 'false')
       void this.poll();
+  }
+
+  // Приветствие; если мини-приложение подключено — следом кнопка, которая его открывает.
+  private async welcome(chat: number) {
+    const t = this.t(chat);
+    await this.say(chat, t.welcome);
+    if (this.miniApp)
+      await this.say(chat, t.openApp, {
+        inline_keyboard: [
+          [{ text: t.openAppButton, web_app: { url: this.miniApp } }],
+        ],
+      });
   }
 
   onApplicationShutdown() {
@@ -284,6 +299,15 @@ export class BotService
             await this.api<{ username: string }>('getMe', {})
           ).username;
           this.logger.log(`Публичный бот @${this.username} запущен`);
+          // Кнопка слева от поля ввода открывает мини-приложение.
+          if (this.miniApp)
+            await this.api('setChatMenuButton', {
+              menu_button: {
+                type: 'web_app',
+                text: 'Bileto',
+                web_app: { url: this.miniApp },
+              },
+            }).catch((e) => this.logger.warn(`кнопка меню: ${String(e)}`));
         }
         const updates = await this.api<Update[]>('getUpdates', {
           offset,
@@ -346,7 +370,7 @@ export class BotService
         if (sell) this.sellAfterLang.add(chat);
         return this.say(chat, LANG_PROMPT, langKeyboard);
       }
-      return sell ? this.startSell(chat) : this.say(chat, t.welcome);
+      return sell ? this.startSell(chat) : this.welcome(chat);
     }
     if ((text === STATS_BUTTON || text === '/stats') && this.isAdmin(chat)) {
       this.states.delete(chat);
@@ -367,6 +391,8 @@ export class BotService
     if (state?.kind === 'contact') return this.onContact(m, state.pending);
     if (state?.kind === 'sell') return this.onSellStep(m, state);
     if (state?.kind === 'password') return this.onPassword(m, state.userId);
+    // Контакт вне сценария — человек нажал «Поделиться номером» в мини-приложении.
+    if (m.contact && !action) return this.onAppContact(m);
 
     switch (action) {
       case 'buy':
@@ -416,7 +442,7 @@ export class BotService
           if (arg === 'ru' || arg === 'uz') {
             await this.setLang(chat, arg);
             if (this.sellAfterLang.delete(chat)) await this.startSell(chat);
-            else await this.say(chat, this.t(chat).welcome);
+            else await this.welcome(chat);
           }
           break;
         case 'c':
@@ -489,6 +515,27 @@ export class BotService
       return this.say(chat, t.onlyUz);
     }
 
+    const user = await this.linkPhone(chat, from, phone);
+    this.states.delete(chat);
+    return this.run(chat, from, user, pending);
+  }
+
+  private async onAppContact(m: TgMessage) {
+    const chat = m.chat.id;
+    const from = m.from!;
+    const t = this.t(chat);
+    if (m.contact!.user_id !== from.id) return this.say(chat, t.ownNumber);
+    const phone = normalizeUzPhone(m.contact!.phone_number);
+    if (!phone) return this.say(chat, t.onlyUz);
+    await this.linkPhone(chat, from, phone);
+    return this.say(chat, t.phoneLinked);
+  }
+
+  private async linkPhone(
+    chat: number,
+    from: TgUser,
+    phone: string,
+  ): Promise<BotUser> {
     // Номер подтверждён Telegram, поэтому привязываем существующий аккаунт с этим номером.
     const tgId = String(from.id);
     const [, user] = await this.prisma.$transaction([
@@ -513,8 +560,7 @@ export class BotService
       where: { phone, userId: null },
       data: { userId: user.id },
     });
-    this.states.delete(chat);
-    return this.run(chat, from, user, pending);
+    return user;
   }
 
   private run(chat: number, from: TgUser, user: BotUser, p: Pending) {

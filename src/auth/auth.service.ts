@@ -5,10 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeUzPhone } from '../common/utils/phone';
 import { hashPassword, verifyPassword } from '../common/utils/password';
+import { verifyInitData } from '../common/utils/telegram-init-data';
 import { JwtPayload } from '../common/types/auth-user.type';
 
 const USER_SELECT = {
@@ -26,6 +28,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly config: ConfigService,
   ) {}
 
   // Регистрация по номеру и паролю, без SMS-подтверждения. Аккаунт, заведённый
@@ -70,6 +73,25 @@ export class AuthService {
     if (!passwordHash || !(await verifyPassword(password, passwordHash)))
       throw new UnauthorizedException('Неверный номер или пароль');
     return this.session({ ...found, passwordHash: undefined });
+  }
+
+  // Мини-приложение Telegram: личность подтверждает подпись Telegram, аккаунт ищем по telegramId.
+  // Аккаунт появляется, когда человек делится номером с ботом; до этого token = null.
+  async telegram(initData: string) {
+    const botToken = this.config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN');
+    const tg = botToken ? verifyInitData(initData, botToken) : null;
+    if (!tg) throw new UnauthorizedException('Откройте Bileto из Telegram');
+    const id = String(tg.id);
+    const [user, chat] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { telegramId: id },
+        select: USER_SELECT,
+      }),
+      this.prisma.botChat.findUnique({ where: { id } }),
+    ]);
+    const lang = chat?.lang ?? (tg.language_code === 'uz' ? 'uz' : 'ru');
+    if (!user) return { token: null, user: null, lang };
+    return { ...(await this.session(user)), lang };
   }
 
   // Заявки, оставленные без входа с этого номера, становятся видны в «Мои заявки».

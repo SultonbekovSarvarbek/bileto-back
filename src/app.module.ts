@@ -9,6 +9,7 @@ import { RequestsModule } from './requests/requests.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { AdminModule } from './admin/admin.module';
 import { BotModule } from './bot/bot.module';
+import { MiniappModule } from './miniapp/miniapp.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -23,6 +24,7 @@ import { AppController } from './app.controller';
     FavoritesModule,
     AdminModule,
     BotModule,
+    MiniappModule,
   ],
   controllers: [AppController],
 })
