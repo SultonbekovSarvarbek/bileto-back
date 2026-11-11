@@ -430,6 +430,7 @@ export class BotService
     const chat = q.message?.chat.id ?? q.from.id;
     const [kind, arg, extra] = (q.data ?? '').split(':');
     let notice: string | undefined;
+    let alert = false;
     try {
       switch (kind) {
         case 'st':
@@ -476,7 +477,10 @@ export class BotService
           if (q.message)
             await this.showMyListings(chat, q.from.id, q.message.message_id);
           break;
-        case 'md': // «Удалить» — сначала переспрашиваем
+        case 'md': {
+          // «Удалить» — сначала переспрашиваем
+          const user = await this.userByTg(q.from.id);
+          if (user) await this.listings.removableOrThrow(user.id, arg);
           if (q.message)
             await this.showMyListings(
               chat,
@@ -485,6 +489,7 @@ export class BotService
               arg,
             );
           break;
+        }
         case 'mx':
           notice = await this.removeListing(chat, q.from.id, arg);
           if (q.message)
@@ -497,11 +502,14 @@ export class BotService
       }
     } catch (e) {
       if (!(e instanceof HttpException)) throw e;
+      // отказ в удалении — окном, а не всплывающей строкой: его нельзя пропустить
+      alert = kind === 'md' || kind === 'mx';
       notice = translateError(this.langs.get(chat)?.lang ?? 'ru', e.message);
     } finally {
       await this.api('answerCallbackQuery', {
         callback_query_id: q.id,
         text: notice,
+        show_alert: alert,
       }).catch(() => undefined);
     }
   }

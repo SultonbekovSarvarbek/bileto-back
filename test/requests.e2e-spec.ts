@@ -359,6 +359,28 @@ describe('Заявки через Telegram (e2e)', () => {
       .set('Authorization', seller.auth)
       .expect(200);
     expect(mine.body).toEqual([]);
+
+    // с открытой заявкой удалить нельзя, после её закрытия — можно
+    const busy = await createListing(seller.auth);
+    const req = await http()
+      .post('/api/requests')
+      .send({ listingId: busy.id, qty: 1, name: 'Гость', phone: '901112233' })
+      .expect(201);
+    const blocked = await http()
+      .post(`/api/listings/${busy.id}/delete`)
+      .set('Authorization', seller.auth)
+      .expect(409);
+    expect((blocked.body as { message: string }).message).toBe(
+      'У вас есть активные заявки на этот билет',
+    );
+    await requests.handleCallback(
+      press(`r:${(req.body as { id: string }).id}:CANCELLED`),
+    );
+    await http()
+      .post(`/api/listings/${busy.id}/delete`)
+      .set('Authorization', seller.auth)
+      .expect(204);
+
     await http()
       .get(`/api/listings/${listing.id}`)
       .set('Authorization', seller.auth)

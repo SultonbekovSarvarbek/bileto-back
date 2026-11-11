@@ -197,8 +197,19 @@ export class ListingsService {
 
   // Удаление продавцом: объявление пропадает из «Моих», ленты и избранного.
   // Запись и заявки остаются операторам для разбора споров.
+  // Пока по билету есть открытая заявка, удалить его нельзя: с покупателем уже работает оператор.
   async remove(sellerId: string, id: string) {
-    const listing = await this.ownOrThrow(sellerId, id);
+    const listing = await this.removableOrThrow(sellerId, id);
     await softDeleteListing(this.prisma, listing);
+  }
+
+  async removableOrThrow(sellerId: string, id: string) {
+    const listing = await this.ownOrThrow(sellerId, id);
+    const open = await this.prisma.purchaseRequest.count({
+      where: { listingId: id, status: { in: ['NEW', 'IN_PROGRESS'] } },
+    });
+    if (open)
+      throw new ConflictException('У вас есть активные заявки на этот билет');
+    return listing;
   }
 }

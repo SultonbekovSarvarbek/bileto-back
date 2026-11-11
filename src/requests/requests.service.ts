@@ -208,7 +208,12 @@ export class RequestsService implements OnModuleInit {
         });
         notice = 'Объявление снято';
       } else if (action === 'delete') {
-        notice = 'Удалить объявление? Вернуть его кнопкой будет нельзя';
+        const open = await this.prisma.purchaseRequest.count({
+          where: { listingId: id, status: { in: OPEN } },
+        });
+        notice = open
+          ? `По объявлению есть активные заявки: ${open}. Всё равно удалить?`
+          : 'Удалить объявление? Вернуть его кнопкой будет нельзя';
       } else if (action === 'delete!') {
         [, l] = await softDeleteListing(this.prisma, l, {
           rejectReason: `Удалено оператором: ${who}`,

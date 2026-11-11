@@ -70,7 +70,7 @@
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const m = Array.isArray(json.message) ? json.message[0] : json.message;
-      throw new Error(m || t.error);
+      throw Object.assign(new Error(m || t.error), { status: res.status });
     }
     return json;
   }
@@ -394,7 +394,7 @@
       S.feed.items = [];
       render();
     } catch (e) {
-      toast(e.message);
+      toast(how === 'remove' && e.status === 409 ? t.activeRequests : e.message);
     }
   }
 
