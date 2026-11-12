@@ -86,7 +86,10 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
     return sent.filter((s) => s.method === 'sendMessage').map((s) => s.text);
   }
 
+  const ADMIN = 990_000_777;
+
   beforeAll(async () => {
+    process.env.ADMIN_TELEGRAM_IDS = String(ADMIN);
     const mod = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TelegramService)
       .useValue({
@@ -225,6 +228,49 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
       .split('\n')
       .find((l) => l.includes(source));
     expect(line).toBe(`<code>${source}</code>: 3 → 2 → <b>1</b> (50%)`);
+  });
+
+  it('админ удаляет билет командой /tickets, остальным она недоступна', async () => {
+    const title = `Билет ${tag('adm')}`;
+    const seller = await prisma.user.create({
+      data: { phone: `+99877${String(Date.now()).slice(-7)}`, role: 'SELLER' },
+    });
+    const listing = await prisma.listing.create({
+      data: {
+        sellerId: seller.id,
+        title,
+        city: 'Ташкент',
+        qty: 2,
+        qtyAvailable: 2,
+        price: 100000,
+        delivery: 'PICKUP',
+      },
+    });
+    const deletedAt = async () =>
+      (await prisma.listing.findUniqueOrThrow({ where: { id: listing.id } }))
+        .deletedAt;
+
+    // не админ: ни списка, ни удаления
+    const stranger = newChat();
+    await say(stranger, '/start');
+    await press(stranger, 'lg:ru');
+    expect((await say(stranger, `/tickets ${title}`)).join()).not.toContain(
+      '🗑 <b>Билеты</b>',
+    );
+    await press(stranger, `ax:${listing.id}`);
+    expect(await deletedAt()).toBeNull();
+
+    await say(ADMIN, '/start');
+    await press(ADMIN, 'lg:ru');
+    const [list] = await say(ADMIN, `/tickets ${title}`);
+    expect(list).toContain(title);
+
+    await press(ADMIN, `ad:${listing.id}`); // только переспрашивает
+    expect(await deletedAt()).toBeNull();
+    await press(ADMIN, `ax:${listing.id}`);
+    expect(await deletedAt()).not.toBeNull();
+    const [after] = await say(ADMIN, `/tickets ${title}`);
+    expect(after).toContain('Ничего не найдено');
   });
 
   it('продажа без фото: «Пропустить» публикует объявление без обложки', async () => {

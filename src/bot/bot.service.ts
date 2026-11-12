@@ -29,6 +29,7 @@ import {
   LANG_BUTTON,
   LANG_PROMPT,
   STATS_BUTTON,
+  TICKETS_BUTTON,
   langKeyboard,
   listingCard,
   menuAction,
@@ -41,6 +42,8 @@ import {
   translateError,
 } from './bot.texts';
 import { statsText } from './bot.stats';
+import { adminTicketConfirm, adminTickets } from './bot.admin';
+import { softDeleteListing } from '../listings/listing.delete';
 
 type TgUser = { id: number; first_name?: string; last_name?: string };
 type TgMessage = {
@@ -120,6 +123,8 @@ export class BotService
   // Новички по ссылке ?start=sell…: после выбора языка сразу продажа, без приветствия.
   private readonly sellAfterLang = new Set<number>();
   private readonly admins: Set<string>;
+  // Поиск админа в /tickets: нужен при листании страниц.
+  private readonly adminSearch = new Map<number, string>();
   private readonly support: string;
   // Адрес мини-приложения (https://…/app/); пока не задан — бот работает только перепиской.
   private readonly miniApp?: string;
@@ -381,6 +386,17 @@ export class BotService
       this.states.delete(chat);
       return this.say(chat, await statsText(this.prisma), this.statsMarkup);
     }
+    // /tickets [название] — админский список билетов с удалением
+    if (
+      this.isAdmin(chat) &&
+      (text === TICKETS_BUTTON || /^\/tickets(\s|$)/.test(text))
+    ) {
+      this.states.delete(chat);
+      const q = text.startsWith('/') ? text.slice(8).trim() : '';
+      this.adminSearch.set(chat, q);
+      const s = await adminTickets(this.prisma, 1, q);
+      return this.say(chat, s.html, this.inline(s.buttons));
+    }
     if (text === LANG_BUTTON || text === '/lang') {
       this.states.delete(chat);
       return this.say(chat, LANG_PROMPT, langKeyboard);
@@ -443,6 +459,12 @@ export class BotService
               reply_markup: this.statsMarkup,
             }).catch(() => undefined); // цифры не изменились
           notice = 'Обновлено';
+          break;
+        case 'at':
+        case 'ad':
+        case 'ax':
+          if (this.isAdmin(chat))
+            notice = await this.onAdminTickets(q, kind, arg);
           break;
         case 'lg':
           if (arg === 'ru' || arg === 'uz') {
@@ -512,6 +534,42 @@ export class BotService
         show_alert: alert,
       }).catch(() => undefined);
     }
+  }
+
+  // Админ: список билетов (at), вопрос перед удалением (ad), удаление (ax).
+  private async onAdminTickets(q: TgCallback, kind: string, arg: string) {
+    const chat = q.message?.chat.id ?? q.from.id;
+    let notice: string | undefined;
+    let screen = kind === 'ad' && (await adminTicketConfirm(this.prisma, arg));
+    if (kind === 'ad' && !screen) notice = 'Билет уже удалён';
+    if (kind === 'ax') {
+      const l = await this.prisma.listing.findFirst({
+        where: { id: arg, deletedAt: null },
+      });
+      if (l) {
+        const who =
+          [q.from.first_name, q.from.last_name].filter(Boolean).join(' ') ||
+          'админ';
+        await softDeleteListing(this.prisma, l, {
+          rejectReason: `Удалено оператором: ${who}`,
+        });
+      }
+      notice = l ? 'Билет удалён' : 'Билет уже удалён';
+    }
+    screen ||= await adminTickets(
+      this.prisma,
+      kind === 'at' ? Number(arg) || 1 : 1,
+      this.adminSearch.get(chat),
+    );
+    if (q.message)
+      await this.api('editMessageText', {
+        chat_id: chat,
+        message_id: q.message.message_id,
+        text: screen.html,
+        parse_mode: 'HTML',
+        reply_markup: this.inline(screen.buttons),
+      }).catch(() => undefined); // список не изменился
+    return notice;
   }
 
   // ---------- Пользователь и номер ----------

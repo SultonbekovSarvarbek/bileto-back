@@ -12,6 +12,7 @@ export type BotLang = 'ru' | 'uz';
 export const LANGS: BotLang[] = ['ru', 'uz'];
 export const LANG_BUTTON = '🌐 Тил / Язык';
 export const STATS_BUTTON = '📊 Статистика';
+export const TICKETS_BUTTON = '🗑 Билеты';
 
 const ru = {
   menu: {
@@ -314,7 +315,7 @@ export const menuKeyboard = (t: Texts, admin = false) => ({
     [{ text: t.menu.myListings }, { text: t.menu.myRequests }],
     [{ text: t.menu.download }, { text: t.menu.support }],
     [{ text: t.menu.app }, { text: LANG_BUTTON }],
-    ...(admin ? [[{ text: STATS_BUTTON }]] : []),
+    ...(admin ? [[{ text: STATS_BUTTON }, { text: TICKETS_BUTTON }]] : []),
   ],
   resize_keyboard: true,
   is_persistent: true,
