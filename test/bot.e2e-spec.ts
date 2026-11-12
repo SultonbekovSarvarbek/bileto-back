@@ -95,6 +95,7 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
       .useValue({
         enabled: true,
         onCallback() {},
+        isOperatorChat: () => false,
         send: () => Promise.resolve(1),
         sendPhoto: () => Promise.resolve(1),
         edit: () => Promise.resolve(),
@@ -228,6 +229,27 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
       .split('\n')
       .find((l) => l.includes(source));
     expect(line).toBe(`<code>${source}</code>: 3 → 2 → <b>1</b> (50%)`);
+  });
+
+  it('в группе бот называет её ID админу по /chatid и молчит для остальных', async () => {
+    const group = -1_000_000_000_000 - Math.floor(Math.random() * 1e9);
+    const ask = async (from: number, text: string) => {
+      sent = [];
+      bot.dispatch({
+        update_id: updateId++,
+        message: {
+          message_id: updateId,
+          chat: { id: group, type: 'supergroup' },
+          from: { id: from },
+          text,
+        },
+      });
+      await new Promise((r) => setTimeout(r, 50));
+      return sent.map((s) => s.text);
+    };
+    expect(await ask(newChat(), '/chatid')).toEqual([]);
+    expect(await ask(ADMIN, 'привет')).toEqual([]);
+    expect((await ask(ADMIN, '/chatid')).join()).toContain(String(group));
   });
 
   it('админ удаляет билет командой /tickets, остальным она недоступна', async () => {

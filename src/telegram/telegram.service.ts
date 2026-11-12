@@ -28,7 +28,10 @@ export const escapeHtml = (s: string) =>
 
 // Бот шлёт заявки и новые объявления в чат операторов и принимает нажатия кнопок
 // через long polling (публичный URL для webhook не нужен).
-// Без TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID сообщения только пишутся в лог.
+// Без токена или TELEGRAM_CHAT_ID сообщения только пишутся в лог.
+// Отдельный бот операторов не обязателен: без TELEGRAM_BOT_TOKEN в группу пишет
+// публичный бот (TELEGRAM_PUBLIC_BOT_TOKEN), а нажатия кнопок передаёт BotService —
+// два long polling на один токен Telegram не допускает.
 @Injectable()
 export class TelegramService
   implements OnApplicationBootstrap, OnApplicationShutdown
@@ -36,16 +39,25 @@ export class TelegramService
   private readonly logger = new Logger(TelegramService.name);
   private readonly token?: string;
   private readonly chatId?: string;
+  private readonly shared: boolean; // работаем через публичного бота
   private handler?: CallbackHandler;
   private readonly abort = new AbortController();
 
   constructor(private readonly config: ConfigService) {
-    this.token = config.get<string>('TELEGRAM_BOT_TOKEN') || undefined;
+    const own = config.get<string>('TELEGRAM_BOT_TOKEN') || undefined;
+    const pub = config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN') || undefined;
+    this.token = own ?? pub;
+    this.shared = !own || own === pub;
     this.chatId = config.get<string>('TELEGRAM_CHAT_ID') || undefined;
   }
 
   get enabled() {
     return !!this.token && !!this.chatId;
+  }
+
+  /** Чат операторов? Публичный бот отдаёт нажатия кнопок из него в answer(). */
+  isOperatorChat(chatId: number) {
+    return this.shared && !!this.chatId && String(chatId) === this.chatId;
   }
 
   onCallback(handler: CallbackHandler) {
@@ -137,7 +149,11 @@ export class TelegramService
   }
 
   onApplicationBootstrap() {
-    if (this.enabled && this.config.get<string>('TELEGRAM_POLLING') !== 'false')
+    if (
+      this.enabled &&
+      !this.shared &&
+      this.config.get<string>('TELEGRAM_POLLING') !== 'false'
+    )
       void this.poll();
   }
 
@@ -169,7 +185,7 @@ export class TelegramService
     }
   }
 
-  private async answer(q: CallbackQuery) {
+  async answer(q: CallbackQuery) {
     let text = 'Неизвестная команда';
     try {
       if (this.handler) text = await this.handler(q);

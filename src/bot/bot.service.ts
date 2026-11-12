@@ -14,7 +14,7 @@ import { basename, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
 import { RequestsService } from '../requests/requests.service';
-import { escapeHtml as h } from '../telegram/telegram.service';
+import { escapeHtml as h, TelegramService } from '../telegram/telegram.service';
 import { formatPhone, normalizeUzPhone } from '../common/utils/phone';
 import { PHOTOS_DIR } from '../common/utils/upload';
 import { hashPassword } from '../common/utils/password';
@@ -134,6 +134,7 @@ export class BotService
     private readonly prisma: PrismaService,
     private readonly listings: ListingsService,
     private readonly requests: RequestsService,
+    private readonly telegram: TelegramService,
   ) {
     this.token = config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN') || undefined;
     this.support = (
@@ -338,6 +339,17 @@ export class BotService
 
   // Обновления одного чата обрабатываются по очереди, разные чаты — параллельно.
   private dispatch(u: Update) {
+    // Группа операторов: кнопки заявок и объявлений обрабатывает TelegramService.
+    const from = u.callback_query?.message?.chat.id;
+    if (u.callback_query && from !== undefined && from < 0) {
+      if (this.telegram.isOperatorChat(from))
+        void this.telegram.answer(u.callback_query);
+      return;
+    }
+    if (u.message && u.message.chat.type !== 'private') {
+      void this.onGroupMessage(u.message);
+      return;
+    }
     const chat = u.message?.chat.id ?? u.callback_query?.from.id;
     if (chat === undefined) return;
     const job = async () => {
@@ -358,6 +370,17 @@ export class BotService
     void run.finally(() => {
       if (this.queues.get(chat) === run) this.queues.delete(chat);
     });
+  }
+
+  // В группах бот молчит; только админу по /chatid называет ID группы для TELEGRAM_CHAT_ID.
+  private async onGroupMessage(m: TgMessage) {
+    if (!m.from || !this.isAdmin(m.from.id)) return;
+    if (!/^\/chatid(@\w+)?$/.test(m.text?.trim() ?? '')) return;
+    await this.api('sendMessage', {
+      chat_id: m.chat.id,
+      text: `ID этой группы: <code>${m.chat.id}</code>\nВпишите его в TELEGRAM_CHAT_ID и перезапустите сервер.`,
+      parse_mode: 'HTML',
+    }).catch((e: unknown) => this.logger.warn(String(e)));
   }
 
   private async onMessage(m: TgMessage) {
