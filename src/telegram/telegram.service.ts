@@ -12,7 +12,12 @@ export type InlineButton = { text: string; callback_data: string };
 export type CallbackQuery = {
   id: string;
   data?: string;
-  from: { first_name?: string; last_name?: string; username?: string };
+  from: {
+    id?: number;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+  };
   message?: { message_id: number };
 };
 // Возвращает текст всплывающего уведомления для нажавшего кнопку.

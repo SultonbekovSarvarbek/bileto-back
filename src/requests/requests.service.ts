@@ -8,6 +8,7 @@ import {
   NotFoundException,
   OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, RequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -34,10 +35,21 @@ const OPEN: RequestStatus[] = ['NEW', 'IN_PROGRESS'];
 export class RequestsService implements OnModuleInit {
   private readonly logger = new Logger(RequestsService.name);
 
+  // Удалять объявления в чате операторов могут только админы из ADMIN_TELEGRAM_IDS.
+  private readonly admins: Set<string>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
-  ) {}
+    config: ConfigService,
+  ) {
+    this.admins = new Set(
+      (config.get<string>('ADMIN_TELEGRAM_IDS') ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    );
+  }
 
   onModuleInit() {
     this.telegram.onCallback((q) => this.handleCallback(q));
@@ -194,6 +206,8 @@ export class RequestsService implements OnModuleInit {
         include: { seller },
       });
       if (!l) return 'Объявление не найдено';
+      if (action !== 'reject' && !this.admins.has(String(q.from.id)))
+        return 'Удалять объявления может только администратор';
       let notice = 'Готово';
       if (l.deletedAt) {
         notice = 'Объявление уже удалено';

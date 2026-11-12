@@ -83,14 +83,16 @@ describe('Заявки через Telegram (e2e)', () => {
     return res.body as { id: string; seller: Record<string, unknown> };
   }
 
-  const press = (data: string): CallbackQuery => ({
+  const ADMIN_TG_ID = 777;
+  const press = (data: string, fromId = 1): CallbackQuery => ({
     id: '1',
     data,
-    from: { first_name: 'Оператор' },
+    from: { id: fromId, first_name: 'Оператор' },
     message: { message_id: 1 },
   });
 
   beforeAll(async () => {
+    process.env.ADMIN_TELEGRAM_IDS = String(ADMIN_TG_ID);
     const mod = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(TelegramService)
       .useValue(tg)
@@ -406,15 +408,21 @@ describe('Заявки через Telegram (e2e)', () => {
     const a = await createListing(seller.auth);
     const b = await createListing(seller.auth);
 
-    // первое нажатие только переспрашивает
-    await requests.handleCallback(press(`l:${a.id}:delete`));
-    await http().get(`/api/listings/${a.id}`).expect(200);
-    await requests.handleCallback(press(`l:${a.id}:keep`));
+    // обычный оператор удалить не может
+    expect(await requests.handleCallback(press(`l:${a.id}:delete!`))).toBe(
+      'Удалять объявления может только администратор',
+    );
     await http().get(`/api/listings/${a.id}`).expect(200);
 
-    expect(await requests.handleCallback(press(`l:${a.id}:delete!`))).toBe(
-      'Объявление удалено',
-    );
+    // первое нажатие админа только переспрашивает
+    await requests.handleCallback(press(`l:${a.id}:delete`, ADMIN_TG_ID));
+    await http().get(`/api/listings/${a.id}`).expect(200);
+    await requests.handleCallback(press(`l:${a.id}:keep`, ADMIN_TG_ID));
+    await http().get(`/api/listings/${a.id}`).expect(200);
+
+    expect(
+      await requests.handleCallback(press(`l:${a.id}:delete!`, ADMIN_TG_ID)),
+    ).toBe('Объявление удалено');
     await http().get(`/api/listings/${a.id}`).expect(404);
     expect(await requests.handleCallback(press(`l:${a.id}:reject`))).toBe(
       'Объявление уже удалено',
