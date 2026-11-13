@@ -94,10 +94,6 @@ export class OffersService {
       throw new NotFoundException('Объявление недоступно');
     if (listing.sellerId === userId)
       throw new BadRequestException('Нельзя купить свой билет');
-    if (!listing.negotiable)
-      throw new ConflictException(
-        'Продавец указал, что цена окончательная — торг не предусмотрен',
-      );
     if (dto.qty > listing.qtyAvailable)
       throw new ConflictException(
         `В наличии только ${listing.qtyAvailable} шт.`,

@@ -812,9 +812,7 @@ export class BotService
       active
         ? [
             [{ text: t.buy, callback_data: `b:${l.id}` }],
-            ...(l.negotiable
-              ? [[{ text: t.offer, callback_data: `o:${l.id}` }]]
-              : []),
+            [{ text: t.offer, callback_data: `o:${l.id}` }],
           ]
         : [],
     );
@@ -911,19 +909,15 @@ export class BotService
 
   // ---------- Торг: покупатель предлагает цену ----------
 
-  private async negotiableListing(id: string) {
+  private async offerableListing(id: string) {
     const l = await this.prisma.listing.findUnique({ where: { id } });
     const ok =
-      l &&
-      l.status === 'ACTIVE' &&
-      !l.deletedAt &&
-      l.negotiable &&
-      l.qtyAvailable > 0;
+      l && l.status === 'ACTIVE' && !l.deletedAt && l.qtyAvailable > 0;
     return ok ? l : null;
   }
 
   private async startOffer(chat: number, id: string) {
-    const l = await this.negotiableListing(id);
+    const l = await this.offerableListing(id);
     if (!l) return this.say(chat, this.t(chat).unavailable);
     if (l.qtyAvailable === 1) return this.askOfferPrice(chat, id, 1);
     const n = Math.min(l.qtyAvailable, 10);
@@ -939,7 +933,7 @@ export class BotService
 
   private async askOfferPrice(chat: number, id: string, qty: number) {
     const t = this.t(chat);
-    const l = await this.negotiableListing(id);
+    const l = await this.offerableListing(id);
     if (!l || !Number.isInteger(qty) || qty < 1 || qty > l.qtyAvailable)
       return this.say(chat, t.unavailable);
     this.states.set(chat, { kind: 'offer', listingId: id, qty });
