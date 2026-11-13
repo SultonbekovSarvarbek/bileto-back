@@ -245,7 +245,7 @@
               <div class="line total"><span>${esc(t.total)}</span><b>${money(subtotal + fee)}</b></div>
               <p class="note">${esc(t.buyNote)}</p>
             </div>
-            ${l.negotiable ? offerBlock(v) : ''}
+            ${offerBlock(v)}
             <div class="cta"><button class="btn" data-act="buy">${esc(t.buy)}</button></div>`
           : `<div class="cta"><button class="btn ghost" disabled>${esc(t.soldOut)}</button></div>`
       }`;
@@ -253,15 +253,15 @@
 
   // Торг: своя цена за билет. Продавец увидит имя из Telegram и номер со скрытыми цифрами.
   function offerBlock(v) {
-    if (!v.offerOpen) return `<button class="btn ghost" data-act="offerOpen" style="margin-bottom:12px">💬 ${esc(t.offer)}</button>`;
     const u = (inTg && tg.initDataUnsafe.user) || {};
     const who = [u.first_name, u.last_name].filter(Boolean).join(' ') || (S.user && S.user.name) || '';
     const phone = S.user ? `${S.user.phone.slice(0, 4)} ${S.user.phone.slice(4, 6)} ••• •• ${S.user.phone.slice(-2)}` : '';
     return `<div class="block" id="offer">
-        <h2>${esc(t.offerTitle(v.qty))}</h2>
+        <h2>💬 ${esc(t.offer)}</h2>
+        <p class="note" style="margin:0 0 8px">${esc(t.offerTitle(v.qty))}</p>
         <div class="suffix"><input class="in" id="offerPrice" inputmode="numeric" placeholder="${esc(money(v.data.price).replace(' ' + t.sum, ''))}" value="${esc(v.offerPrice || '')}"><em>${esc(t.sum)}</em></div>
         <p class="note">${esc(t.offerNote)}${who || phone ? ` <b>${esc([who, phone].filter(Boolean).join(', '))}</b>` : ''}</p>
-        <button class="btn" data-act="offerSend" style="margin-top:12px">${esc(t.offerSend)}</button>
+        <button class="btn ghost" data-act="offerSend" style="margin-top:12px">${esc(t.offerSend)}</button>
       </div>`;
   }
 
@@ -503,13 +503,6 @@
       case 'more': return loadFeed(S.feed.page + 1);
       case 'reload': delete v.data; return render();
       case 'buy': return buy(el);
-      case 'offerOpen': {
-        v.offerOpen = true;
-        renderListing(v);
-        const $in = document.getElementById('offerPrice');
-        if ($in) { $in.focus(); document.getElementById('offer').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-        return;
-      }
       case 'offerSend': return sendOffer(el);
       case 'publish': return publish(el);
       case 'login': return needUser().then((ok) => ok && render());

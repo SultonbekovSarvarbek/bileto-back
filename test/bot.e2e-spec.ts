@@ -369,10 +369,10 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
     const fixed = await sell(`Без торга ${run}`, TEXTS.ru.negotiable.final);
     expect(fixed.negotiable).toBe(false);
 
-    // Покупатель: у билета без торга предложить цену нельзя.
+    // Покупатель: предложить цену можно и за билет с окончательной ценой.
     await say(buyer, '/start');
     await press(buyer, 'lg:ru');
-    expect(await press(buyer, `o:${fixed.id}`)).toEqual([TEXTS.ru.unavailable]);
+    expect(await press(buyer, `o:${fixed.id}`)).toEqual([TEXTS.ru.howMany]);
 
     // Цена не ниже цены продавца — отказ; номер бот просит один раз.
     expect(await press(buyer, `o:${listing.id}`)).toEqual([TEXTS.ru.howMany]);
@@ -461,7 +461,7 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
     ).toMatchObject({ status: 'ACCEPTED' });
   });
 
-  it('торг через API: цена окончательная — 409, отклонённое предложение можно повторить', async () => {
+  it('торг через API: цену можно предложить на любой билет, отклонённое предложение можно повторить', async () => {
     const http = () => request(app.getHttpServer());
     const account = async (role: string) => {
       const phone =
@@ -496,7 +496,7 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
     // Без поля negotiable цена окончательная.
     const fixed = await create();
     expect(fixed.negotiable).toBe(false);
-    await offer(fixed.id, 150000).expect(409);
+    await offer(fixed.id, 150000).expect(201);
     await http()
       .post('/api/listings')
       .set('Authorization', seller)
@@ -537,9 +537,11 @@ describe('Публичный бот: метки ?start= (e2e)', () => {
       .get('/api/me/offers')
       .set('Authorization', buyer)
       .expect(200);
-    expect(mine.body).toMatchObject([
-      { id, status: 'DECLINED', price: 150000 },
-    ]);
+    expect(mine.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id, status: 'DECLINED', price: 150000 }),
+      ]),
+    );
 
     // После отказа — новая цена; продавец принимает, в «Моих заявках» цена договорная.
     const second = await offer(open.id, 180000).expect(201);
