@@ -20,6 +20,7 @@ export const LISTING_PUBLIC_SELECT = {
   qty: true,
   qtyAvailable: true,
   price: true,
+  negotiable: true,
   delivery: true,
   status: true,
   views: true,

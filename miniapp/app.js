@@ -20,7 +20,7 @@
     stack: [{ name: 'feed' }], // экраны; последний — текущий
     feed: { q: '', city: '', page: 1, items: [], total: 0 },
     myTab: 'listings',
-    draft: { title: '', city: '', price: '', qty: 1, delivery: 'PICKUP', description: '', photo: null, photoUrl: '' },
+    draft: { title: '', city: '', price: '', negotiable: false, qty: 1, delivery: 'PICKUP', description: '', photo: null, photoUrl: '' },
   };
   let t = window.I18N[S.lang] || window.I18N.ru;
 
@@ -202,7 +202,7 @@
             <div class="card-body">
               <div class="card-title">${esc(l.title)}</div>
               <div class="card-meta">📍 ${esc(l.city)} · ${esc(t.delivery[l.delivery])}</div>
-              <div class="card-foot"><span class="price">${money(l.price)}</span><span class="left">${esc(t.left(l.qtyAvailable))}</span></div>
+              <div class="card-foot"><span class="price">${money(l.price)}${l.negotiable ? ` <span class="badge warn">${esc(t.haggle)}</span>` : ''}</span><span class="left">${esc(t.left(l.qtyAvailable))}</span></div>
             </div>
           </button>`,
         )
@@ -231,7 +231,7 @@
     $app.innerHTML = `
       ${cover(l, 'cover')}
       <h1 class="h1">${esc(l.title)}</h1>
-      <div class="tags"><span class="tag">📍 ${esc(l.city)}</span><span class="tag">${esc(t.delivery[l.delivery])}</span>${available ? `<span class="tag">${esc(t.left(l.qtyAvailable))}</span>` : ''}</div>
+      <div class="tags"><span class="tag">📍 ${esc(l.city)}</span><span class="tag">${esc(t.delivery[l.delivery])}</span><span class="tag">${esc(l.negotiable ? t.negOpen : t.negFinal)}</span>${available ? `<span class="tag">${esc(t.left(l.qtyAvailable))}</span>` : ''}</div>
       ${l.description ? `<div class="block"><h2>${esc(t.description)}</h2><div class="desc">${esc(l.description)}</div></div>` : ''}
       <div class="block"><h2>${esc(t.seller)}</h2>${esc(l.seller.name || 'Bileto')}${l.seller.verified ? ` <span class="badge ok">✓ ${esc(t.verified)}</span>` : ''}<div class="sub">${esc(l.seller.phoneMasked)}</div></div>
       ${
@@ -245,9 +245,43 @@
               <div class="line total"><span>${esc(t.total)}</span><b>${money(subtotal + fee)}</b></div>
               <p class="note">${esc(t.buyNote)}</p>
             </div>
+            ${l.negotiable ? offerBlock(v) : ''}
             <div class="cta"><button class="btn" data-act="buy">${esc(t.buy)}</button></div>`
           : `<div class="cta"><button class="btn ghost" disabled>${esc(t.soldOut)}</button></div>`
       }`;
+  }
+
+  // Торг: своя цена за билет. Продавец увидит имя из Telegram и номер со скрытыми цифрами.
+  function offerBlock(v) {
+    if (!v.offerOpen) return `<button class="btn ghost" data-act="offerOpen" style="margin-bottom:12px">💬 ${esc(t.offer)}</button>`;
+    const u = (inTg && tg.initDataUnsafe.user) || {};
+    const who = [u.first_name, u.last_name].filter(Boolean).join(' ') || (S.user && S.user.name) || '';
+    const phone = S.user ? `${S.user.phone.slice(0, 4)} ${S.user.phone.slice(4, 6)} ••• •• ${S.user.phone.slice(-2)}` : '';
+    return `<div class="block" id="offer">
+        <h2>${esc(t.offerTitle(v.qty))}</h2>
+        <div class="suffix"><input class="in" id="offerPrice" inputmode="numeric" placeholder="${esc(money(v.data.price).replace(' ' + t.sum, ''))}" value="${esc(v.offerPrice || '')}"><em>${esc(t.sum)}</em></div>
+        <p class="note">${esc(t.offerNote)}${who || phone ? ` <b>${esc([who, phone].filter(Boolean).join(', '))}</b>` : ''}</p>
+        <button class="btn" data-act="offerSend" style="margin-top:12px">${esc(t.offerSend)}</button>
+      </div>`;
+  }
+
+  async function sendOffer(btn) {
+    const v = view();
+    const price = Number(String(v.offerPrice || '').replace(/\D/g, ''));
+    if (!(price >= 1000)) return toast(t.eOfferPrice);
+    if (price >= v.data.price) return toast(t.eOfferHigh);
+    if (!(await needUser())) return;
+    btn.disabled = true;
+    try {
+      await api('POST', '/offers', { listingId: v.id, qty: v.qty, price, initData: tg.initData });
+      haptic('success');
+      S.stack = [{ name: 'feed' }];
+      go('done', { icon: '💬', title: t.offerDone, text: t.offerDoneText, primary: [t.toRequests, 'my:requests'], secondary: [t.toFeed, 'feed'] });
+    } catch (e) {
+      haptic('error');
+      toast(e.message);
+      btn.disabled = false;
+    }
   }
 
   async function buy(btn) {
@@ -279,6 +313,7 @@
       <label class="f"><span>${esc(t.fCity)}</span><input class="in" data-f="city" maxlength="60" placeholder="${esc(t.fCityPh)}" value="${esc(d.city)}">
         <div class="mini-chips">${S.cfg.cities.slice(0, 4).map((c) => `<button type="button" data-setcity="${esc(c)}">${esc(c)}</button>`).join('')}</div></label>
       <label class="f"><span>${esc(t.fPrice)}</span><div class="suffix"><input class="in" data-f="price" inputmode="numeric" placeholder="500 000" value="${esc(d.price)}"><em>${esc(t.sum)}</em></div></label>
+      <div class="seg" style="margin:-4px 0 14px">${[false, true].map((k) => `<button data-neg="${k ? 1 : 0}" class="${d.negotiable === k ? 'on' : ''}">${esc(k ? t.negOpen : t.negFinal)}</button>`).join('')}</div>
       <div class="f-label">${esc(t.fQty)}</div>
       <div class="block" style="padding:8px 14px"><div class="stepper"><span>${esc(t.pcs)}</span><div><button data-dqty="-1" ${d.qty <= 1 ? 'disabled' : ''}>−</button><output id="dqty">${d.qty}</output><button data-dqty="1" ${d.qty >= 10 ? 'disabled' : ''}>+</button></div></div></div>
       <div class="f-label">${esc(t.fDelivery)}</div>
@@ -326,6 +361,7 @@
       form.append('title', title);
       form.append('city', city);
       form.append('price', String(price));
+      form.append('negotiable', String(d.negotiable));
       form.append('qty', String(d.qty));
       form.append('delivery', d.delivery);
       if (description) form.append('description', description);
@@ -333,7 +369,7 @@
       await api('POST', '/listings', form);
       haptic('success');
       if (d.photoUrl) URL.revokeObjectURL(d.photoUrl);
-      S.draft = { title: '', city: '', price: '', qty: 1, delivery: 'PICKUP', description: '', photo: null, photoUrl: '' };
+      S.draft = { title: '', city: '', price: '', negotiable: false, qty: 1, delivery: 'PICKUP', description: '', photo: null, photoUrl: '' };
       S.feed.items = [];
       loadConfig();
       S.stack = [{ name: 'sell' }];
@@ -362,8 +398,13 @@
     const tabNow = S.myTab;
     let html;
     try {
-      const rows = await api('GET', '/me/' + tabNow);
-      html = rows.length ? rows.map(tabNow === 'listings' ? myListing : myRequest).join('') : `<div class="empty"><div class="big">${tabNow === 'listings' ? '🎟' : '🧾'}</div>${esc(tabNow === 'listings' ? t.emptyListings : t.emptyRequests)}</div>`;
+      // Предложения цены: продавцу — входящие над объявлениями, покупателю — свои над заявками.
+      const [rows, offers] = await Promise.all([
+        api('GET', '/me/' + tabNow),
+        api('GET', tabNow === 'listings' ? '/me/offers/incoming' : '/me/offers').catch(() => []),
+      ]);
+      const extra = tabNow === 'listings' ? offers.map(incomingOffer) : offers.filter((o) => o.status !== 'ACCEPTED').map(myOffer);
+      html = rows.length || extra.length ? extra.concat(rows.map(tabNow === 'listings' ? myListing : myRequest)).join('') : `<div class="empty"><div class="big">${tabNow === 'listings' ? '🎟' : '🧾'}</div>${esc(tabNow === 'listings' ? t.emptyListings : t.emptyRequests)}</div>`;
     } catch (e) {
       html = errorBox(e.message);
     }
@@ -384,6 +425,32 @@
       <div class="item-head"><div class="item-title">№${r.number} · ${esc(r.listing.title)}</div><span class="badge ${R_BADGE[r.status]}">${esc(t.rStatus[r.status])}</span></div>
       <div class="sub">${r.qty} ${esc(t.pcs)} · ${esc(t.total.toLowerCase())} ${money(r.total)}</div>
     </div>`;
+
+  const incomingOffer = (o) => `<div class="item offer">
+      <div class="item-head"><div class="item-title">💬 ${esc(t.offerFor)} · ${esc(o.listing.title)}</div><span class="badge warn">${esc(t.oStatus.PENDING)}</span></div>
+      <div class="sub">👤 ${esc(o.buyer.name)}, ${esc(o.buyer.phoneMasked)}</div>
+      <div class="sub">${o.qty} ${esc(t.pcs)} × <b>${money(o.price)}</b> · ${esc(t.yourPrice)} ${money(o.listPrice)}</div>
+      <div class="row"><button class="btn small" data-offer="${esc(o.id)}" data-answer="accept">✅ ${esc(t.accept)}</button><button class="btn ghost small danger" data-offer="${esc(o.id)}" data-answer="decline">${esc(t.decline)}</button></div>
+    </div>`;
+
+  const myOffer = (o) => `<div class="item offer">
+      <div class="item-head"><div class="item-title">💬 ${esc(t.myOffer)} · ${esc(o.listing.title)}</div><span class="badge ${o.status === 'PENDING' ? 'warn' : 'bad'}">${esc(t.oStatus[o.status])}</span></div>
+      <div class="sub">${o.qty} ${esc(t.pcs)} × <b>${money(o.price)}</b> · ${esc(t.sellerPrice)} ${money(o.listPrice)}</div>
+    </div>`;
+
+  async function answerOffer(id, answer) {
+    if (!(await confirmBox(answer === 'accept' ? t.confirmAccept : t.confirmDecline))) return;
+    try {
+      const o = await api('POST', `/offers/${id}/${answer}`);
+      haptic('success');
+      toast(answer === 'accept' ? t.acceptedToast(o.requestNumber) : t.declinedToast);
+      S.feed.items = [];
+    } catch (e) {
+      haptic('error');
+      toast(e.message);
+    }
+    render();
+  }
 
   // how: 'sold' — продано, 'archive' — снять с продажи, 'remove' — удалить совсем
   async function closeListing(id, how) {
@@ -420,6 +487,8 @@
     if (d.qty) { v.qty += Number(d.qty); return renderListing(v); }
     if (d.dqty) { S.draft.qty = Math.min(10, Math.max(1, S.draft.qty + Number(d.dqty))); return renderSell(); }
     if (d.delivery) { S.draft.delivery = d.delivery; return renderSell(); }
+    if (d.neg) { S.draft.negotiable = d.neg === '1'; return renderSell(); }
+    if (d.offer) return answerOffer(d.offer, d.answer);
     if (d.setcity) { e.preventDefault(); S.draft.city = d.setcity; return renderSell(); }
     if (d.mytab) { S.myTab = d.mytab; return render(); }
     if (d.sold) return closeListing(d.sold, 'sold');
@@ -434,6 +503,14 @@
       case 'more': return loadFeed(S.feed.page + 1);
       case 'reload': delete v.data; return render();
       case 'buy': return buy(el);
+      case 'offerOpen': {
+        v.offerOpen = true;
+        renderListing(v);
+        const $in = document.getElementById('offerPrice');
+        if ($in) { $in.focus(); document.getElementById('offer').scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        return;
+      }
+      case 'offerSend': return sendOffer(el);
       case 'publish': return publish(el);
       case 'login': return needUser().then((ok) => ok && render());
       case 'support': {
@@ -449,6 +526,11 @@
     if (el.id === 'q') {
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { S.feed.q = el.value.trim(); loadFeed(1); }, 350);
+      return;
+    }
+    if (el.id === 'offerPrice') {
+      el.value = el.value.replace(/\D/g, '').slice(0, 9).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+      view().offerPrice = el.value;
       return;
     }
     const f = el.dataset && el.dataset.f;

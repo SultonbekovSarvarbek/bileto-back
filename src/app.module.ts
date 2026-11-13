@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ListingsModule } from './listings/listings.module';
 import { RequestsModule } from './requests/requests.module';
+import { OffersModule } from './offers/offers.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { AdminModule } from './admin/admin.module';
 import { BotModule } from './bot/bot.module';
@@ -21,6 +22,7 @@ import { AppController } from './app.controller';
     UsersModule,
     ListingsModule,
     RequestsModule,
+    OffersModule,
     FavoritesModule,
     AdminModule,
     BotModule,

@@ -12,6 +12,7 @@ import {
 
 export const REQUEST_INCLUDE = {
   listing: { include: { seller: { select: { name: true, phone: true } } } },
+  offer: { select: { listPrice: true } },
 } satisfies Prisma.PurchaseRequestInclude;
 export type RequestRow = Prisma.PurchaseRequestGetPayload<{
   include: typeof REQUEST_INCLUDE;
@@ -48,6 +49,11 @@ export function requestText(r: RequestRow, actor?: string) {
     // Место и ряд продавец пишет в описании — оператору оно нужно в заявке.
     ...(l.description ? [`💬 ${h(clip(l.description, 300))}`] : []),
     '',
+    ...(r.offer
+      ? [
+          `🤝 Торг: в объявлении ${formatSum(r.offer.listPrice)}, продавец согласился на ${formatSum(r.unitPrice)} за билет`,
+        ]
+      : []),
     `Билеты: ${r.qty} × ${formatSum(r.unitPrice)} = ${formatSum(r.subtotal)}`,
     `Сервисный сбор ${serviceFeePercent()}%: ${formatSum(r.fee)}`,
     `<b>Итого покупатель платит: ${formatSum(r.total)}</b>`,
@@ -101,7 +107,7 @@ export function listingText(l: ListingForMessage) {
     '',
     `<b>${h(l.title)}</b>`,
     place(l),
-    `${l.qty} шт. × ${formatSum(l.price)}`,
+    `${l.qty} шт. × ${formatSum(l.price)}${l.negotiable ? ' · 🤝 торг уместен' : ''}`,
     `🏷 Продавец: ${h(l.seller.name ?? '—')}, ${formatPhone(l.seller.phone)}`,
     ...source(l),
     // Подпись к фото в Telegram ограничена 1024 символами — описание обрезаем.

@@ -39,6 +39,13 @@ enum RequestStatus {
   CANCELLED
 }
 
+// Предложение цены покупателем: отвечает продавец, принятое становится заявкой.
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 model User {
   id           String    @id @default(uuid())
   phone        String    @unique // +998XXXXXXXXX
@@ -55,6 +62,7 @@ model User {
   listings  Listing[]
   requests  PurchaseRequest[]
   favorites Favorite[]
+  offers    PriceOffer[]
 }
 
 model Listing {
@@ -68,6 +76,7 @@ model Listing {
   qty          Int // сколько билетов выставлено всего
   qtyAvailable Int // сколько ещё не продано
   price        Int // цена за 1 билет, сум
+  negotiable   Boolean       @default(false) // торг уместен: покупатель может предложить свою цену
   delivery     Delivery
   proofPath    String? // файл фото продавца (необязательное): уходит модераторам в Telegram
   status       ListingStatus @default(ACTIVE)
@@ -81,6 +90,7 @@ model Listing {
 
   requests  PurchaseRequest[]
   favorites Favorite[]
+  offers    PriceOffer[]
 
   @@index([status, city, createdAt])
   @@index([sellerId])
@@ -102,12 +112,37 @@ model PurchaseRequest {
   total       Int
   status      RequestStatus @default(NEW)
   tgMessageId Int? // сообщение с заявкой в Telegram-чате операторов
+  offerId     String?       @unique // заявка появилась из принятого предложения цены
+  offer       PriceOffer?   @relation(fields: [offerId], references: [id])
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   @@index([status])
   @@index([listingId])
   @@index([phone, createdAt])
+}
+
+// Покупатель предлагает свою цену за билет с пометкой «торг уместен».
+// Продавец видит имя из Telegram и размытый номер; принятое предложение становится заявкой.
+model PriceOffer {
+  id        String      @id @default(uuid())
+  listingId String
+  listing   Listing     @relation(fields: [listingId], references: [id])
+  userId    String // покупатель
+  user      User        @relation(fields: [userId], references: [id])
+  name      String // имя покупателя из Telegram
+  phone     String
+  qty       Int
+  price     Int // предложенная цена за 1 билет, сум
+  listPrice Int // цена в объявлении на момент предложения
+  status    OfferStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  request PurchaseRequest?
+
+  @@index([listingId, status])
+  @@index([userId, createdAt])
 }
 
 model Favorite {
