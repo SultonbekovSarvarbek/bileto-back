@@ -14,8 +14,13 @@ import { basename, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListingsService } from '../listings/listings.service';
 import { RequestsService } from '../requests/requests.service';
+import { OfferEvent, OffersService } from '../offers/offers.service';
 import { escapeHtml as h, TelegramService } from '../telegram/telegram.service';
-import { formatPhone, normalizeUzPhone } from '../common/utils/phone';
+import {
+  formatPhone,
+  maskPhone,
+  normalizeUzPhone,
+} from '../common/utils/phone';
 import { PHOTOS_DIR } from '../common/utils/upload';
 import { hashPassword } from '../common/utils/password';
 import { hasContacts } from '../common/utils/contacts';
@@ -35,6 +40,7 @@ import {
   menuAction,
   menuKeyboard,
   money,
+  negotiableFrom,
   requestDone,
   stepKeyboard,
   Texts,
@@ -71,20 +77,30 @@ type Draft = {
   title?: string;
   city?: string;
   price?: number;
+  negotiable?: boolean;
   qty?: number;
   delivery?: Delivery;
   description?: string;
   photoFileId?: string;
 };
 type SellStep =
-  'title' | 'city' | 'price' | 'qty' | 'delivery' | 'description' | 'photo';
+  | 'title'
+  | 'city'
+  | 'price'
+  | 'negotiable'
+  | 'qty'
+  | 'delivery'
+  | 'description'
+  | 'photo';
 // Действие, которое ждёт номер телефона.
 type Pending =
   | { type: 'buy'; listingId: string; qty: number }
+  | { type: 'offer'; listingId: string; qty: number; price: number }
   | { type: 'sell'; draft: Draft }
   | { type: 'password' };
 type ChatState =
   | { kind: 'sell'; step: SellStep; draft: Draft }
+  | { kind: 'offer'; listingId: string; qty: number } // ждём цену, которую предлагает покупатель
   | { kind: 'contact'; pending: Pending }
   | { kind: 'password'; userId: string };
 type BotUser = { id: string; phone: string; name: string | null; role: string };
@@ -134,6 +150,7 @@ export class BotService
     private readonly prisma: PrismaService,
     private readonly listings: ListingsService,
     private readonly requests: RequestsService,
+    private readonly offers: OffersService,
     private readonly telegram: TelegramService,
   ) {
     this.token = config.get<string>('TELEGRAM_PUBLIC_BOT_TOKEN') || undefined;
@@ -150,6 +167,7 @@ export class BotService
   }
 
   onApplicationBootstrap() {
+    if (this.token) this.offers.onEvent((e) => this.onOfferEvent(e));
     if (this.token && this.config.get<string>('TELEGRAM_POLLING') !== 'false')
       void this.poll();
   }
@@ -434,6 +452,7 @@ export class BotService
     const state = this.states.get(chat);
     if (state?.kind === 'contact') return this.onContact(m, state.pending);
     if (state?.kind === 'sell') return this.onSellStep(m, state);
+    if (state?.kind === 'offer') return this.onOfferPrice(m, state);
     if (state?.kind === 'password') return this.onPassword(m, state.userId);
     // Контакт вне сценария — человек нажал «Поделиться номером» в мини-приложении.
     if (m.contact && !action) return this.onAppContact(m);
@@ -516,6 +535,16 @@ export class BotService
             qty: Number(extra),
           });
           break;
+        case 'o':
+          await this.startOffer(chat, arg);
+          break;
+        case 'oq':
+          await this.askOfferPrice(chat, arg, Number(extra));
+          break;
+        case 'oa':
+        case 'od':
+          notice = await this.answerOffer(q, arg, kind === 'oa');
+          break;
         case 'ms':
         case 'ma':
           notice = await this.closeListing(chat, q.from.id, arg, kind === 'ms');
@@ -548,7 +577,7 @@ export class BotService
     } catch (e) {
       if (!(e instanceof HttpException)) throw e;
       // отказ в удалении — окном, а не всплывающей строкой: его нельзя пропустить
-      alert = kind === 'md' || kind === 'mx';
+      alert = ['md', 'mx', 'oa', 'od'].includes(kind);
       notice = translateError(this.langs.get(chat)?.lang ?? 'ru', e.message);
     } finally {
       await this.api('answerCallbackQuery', {
@@ -678,6 +707,7 @@ export class BotService
   private run(chat: number, from: TgUser, user: BotUser, p: Pending) {
     if (p.type === 'buy')
       return this.createRequest(chat, from, user, p.listingId, p.qty);
+    if (p.type === 'offer') return this.createOffer(chat, from, user, p);
     if (p.type === 'sell') return this.publish(chat, user, p.draft);
     this.states.set(chat, { kind: 'password', userId: user.id });
     const t = this.t(chat);
@@ -779,7 +809,14 @@ export class BotService
     if (!l) return this.say(chat, t.listingGone);
     const active = l.status === 'ACTIVE' && l.qtyAvailable > 0;
     const markup = this.inline(
-      active ? [[{ text: t.buy, callback_data: `b:${l.id}` }]] : [],
+      active
+        ? [
+            [{ text: t.buy, callback_data: `b:${l.id}` }],
+            ...(l.negotiable
+              ? [[{ text: t.offer, callback_data: `o:${l.id}` }]]
+              : []),
+          ]
+        : [],
     );
     const caption = listingCard(t, l);
     if (l.coverUrl) {
@@ -872,6 +909,165 @@ export class BotService
     }
   }
 
+  // ---------- Торг: покупатель предлагает цену ----------
+
+  private async negotiableListing(id: string) {
+    const l = await this.prisma.listing.findUnique({ where: { id } });
+    const ok =
+      l &&
+      l.status === 'ACTIVE' &&
+      !l.deletedAt &&
+      l.negotiable &&
+      l.qtyAvailable > 0;
+    return ok ? l : null;
+  }
+
+  private async startOffer(chat: number, id: string) {
+    const l = await this.negotiableListing(id);
+    if (!l) return this.say(chat, this.t(chat).unavailable);
+    if (l.qtyAvailable === 1) return this.askOfferPrice(chat, id, 1);
+    const n = Math.min(l.qtyAvailable, 10);
+    const buttons = Array.from({ length: n }, (_, i) => ({
+      text: String(i + 1),
+      callback_data: `oq:${id}:${i + 1}`,
+    }));
+    const rows: Button[][] = [];
+    for (let i = 0; i < buttons.length; i += 5)
+      rows.push(buttons.slice(i, i + 5));
+    return this.say(chat, this.t(chat).howMany, this.inline(rows));
+  }
+
+  private async askOfferPrice(chat: number, id: string, qty: number) {
+    const t = this.t(chat);
+    const l = await this.negotiableListing(id);
+    if (!l || !Number.isInteger(qty) || qty < 1 || qty > l.qtyAvailable)
+      return this.say(chat, t.unavailable);
+    this.states.set(chat, { kind: 'offer', listingId: id, qty });
+    return this.say(chat, t.offerAsk(money(t, l.price)), stepKeyboard(t));
+  }
+
+  private async onOfferPrice(
+    m: TgMessage,
+    state: Extract<ChatState, { kind: 'offer' }>,
+  ) {
+    const chat = m.chat.id;
+    const t = this.t(chat);
+    const price = Number((m.text ?? '').replace(/\D/g, ''));
+    if (!price || price < 1000 || price > 100_000_000)
+      return this.say(chat, t.offerPriceError, stepKeyboard(t));
+    this.states.delete(chat);
+    return this.withUser(chat, m.from!, {
+      type: 'offer',
+      listingId: state.listingId,
+      qty: state.qty,
+      price,
+    });
+  }
+
+  private async createOffer(
+    chat: number,
+    from: TgUser,
+    user: BotUser,
+    p: Extract<Pending, { type: 'offer' }>,
+  ) {
+    const t = this.t(chat);
+    try {
+      // Продавцу показываем имя из Telegram, а не то, что человек вписал где-то ещё.
+      const o = await this.offers.create(
+        user.id,
+        { listingId: p.listingId, qty: p.qty, price: p.price },
+        tgName(from),
+      );
+      return this.say(
+        chat,
+        t.offerSent(h(o.listing.title), `${o.qty} ${t.pcs}`, money(t, o.price)),
+      );
+    } catch (e) {
+      if (e instanceof HttpException)
+        return this.say(
+          chat,
+          h(translateError(this.langs.get(chat)?.lang ?? 'ru', e.message)),
+        );
+      throw e;
+    }
+  }
+
+  // Язык человека, которому бот пишет первым (он сейчас может быть не в диалоге).
+  private async textsFor(tgId: string): Promise<Texts> {
+    const cached = this.langs.get(Number(tgId));
+    if (cached) return TEXTS[cached.lang];
+    const row = await this.prisma.botChat.findUnique({ where: { id: tgId } });
+    return TEXTS[row?.lang === 'uz' ? 'uz' : 'ru'];
+  }
+
+  // Продавцу — новое предложение с кнопками, покупателю — ответ продавца.
+  // У кого Telegram не привязан, видит то же самое в приложении («Мои»).
+  private async onOfferEvent({ type, offer: o }: OfferEvent) {
+    const to =
+      type === 'created' ? o.listing.seller.telegramId : o.user.telegramId;
+    if (!to) return;
+    const t = await this.textsFor(to);
+    const title = h(o.listing.title);
+    const price = money(t, o.price);
+    if (type === 'created')
+      return this.say(
+        Number(to),
+        t.offerIncoming({
+          title,
+          name: h(o.name),
+          phone: maskPhone(o.phone),
+          qty: `${o.qty} ${t.pcs}`,
+          price,
+          listPrice: money(t, o.listPrice),
+        }),
+        this.inline([
+          [
+            { text: t.offerAccept, callback_data: `oa:${o.id}` },
+            { text: t.offerDecline, callback_data: `od:${o.id}` },
+          ],
+        ]),
+      );
+    return this.say(
+      Number(to),
+      type === 'accepted'
+        ? t.offerAcceptedBuyer(title, price, o.request?.number ?? 0)
+        : t.offerDeclinedBuyer(title, price),
+      this.inline([]),
+    );
+  }
+
+  // Продавец нажал «Принять» или «Отклонить» под предложением.
+  private async answerOffer(q: TgCallback, id: string, accept: boolean) {
+    const chat = q.message?.chat.id ?? q.from.id;
+    const t = this.t(chat);
+    const user = await this.userByTg(q.from.id);
+    if (!user) return t.listingNotFound;
+    const o = await this.offers.respond(user.id, id, accept);
+    const result = accept
+      ? t.offerAcceptedSeller(o.requestNumber ?? 0)
+      : t.offerDeclinedSeller;
+    // Кнопки убираем, итог дописываем под предложением.
+    if (q.message)
+      await this.api('editMessageText', {
+        chat_id: chat,
+        message_id: q.message.message_id,
+        text: [
+          t.offerIncoming({
+            title: h(o.listing.title),
+            name: h(o.buyer.name),
+            phone: o.buyer.phoneMasked,
+            qty: `${o.qty} ${t.pcs}`,
+            price: money(t, o.price),
+            listPrice: money(t, o.listPrice),
+          }),
+          '',
+          `<b>${result}</b>`,
+        ].join('\n'),
+        parse_mode: 'HTML',
+      }).catch(() => undefined);
+    return result;
+  }
+
   private async showMyRequests(chat: number, tgId: number) {
     const user = await this.userByTg(tgId);
     const rows = user ? (await this.requests.mine(user.id)).slice(0, 15) : [];
@@ -911,6 +1107,7 @@ export class BotService
       return retry(html, options);
     };
     const deliveryOptions = [[t.delivery.DELIVERY, t.delivery.PICKUP]];
+    const negotiableOptions = [[t.negotiable.final, t.negotiable.open]];
 
     switch (state.step) {
       case 'title':
@@ -927,6 +1124,12 @@ export class BotService
         if (!price || price < 1000 || price > 100_000_000)
           return retry(t.priceError);
         d.price = price;
+        return next('negotiable', t.askNegotiable, negotiableOptions);
+      }
+      case 'negotiable': {
+        const found = negotiableFrom(text);
+        if (found === undefined) return retry(t.useButtons, negotiableOptions);
+        d.negotiable = found;
         return next('qty', t.askQty, [
           ['1', '2', '3', '4', '5'],
           ['6', '7', '8', '9', '10'],
@@ -997,6 +1200,7 @@ export class BotService
         title: d.title!,
         city: d.city!,
         price: d.price!,
+        negotiable: d.negotiable ?? false,
         qty: d.qty!,
         delivery: d.delivery!,
         description: d.description,

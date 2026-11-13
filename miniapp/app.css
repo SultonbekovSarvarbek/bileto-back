@@ -171,3 +171,6 @@ label.f > span, .f-label { display: block; font-size: 13px; font-weight: 600; co
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); opacity: 0; transform: translateY(8px); pointer-events: none; transition: 0.2s;
 }
 #toast.show { opacity: 1; transform: none; }
+.item.offer { border-color: rgba(255, 200, 61, 0.45); }
+.item .sub b { color: var(--text); }
+.note b { color: var(--dim); font-weight: 600; white-space: nowrap; }

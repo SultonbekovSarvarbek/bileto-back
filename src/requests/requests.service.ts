@@ -55,7 +55,12 @@ export class RequestsService implements OnModuleInit {
     this.telegram.onCallback((q) => this.handleCallback(q));
   }
 
-  async create(dto: CreateRequestDto, userId?: string) {
+  // offer — заявка из принятого предложения цены: цена договорная, продавец уже согласился.
+  async create(
+    dto: CreateRequestDto,
+    userId?: string,
+    offer?: { id: string; price: number },
+  ) {
     const phone = normalizeUzPhone(dto.phone);
     if (!phone) throw new BadRequestException('Неверный номер телефона');
 
@@ -83,7 +88,7 @@ export class RequestsService implements OnModuleInit {
         'Заявка на этот билет уже отправлена — оператор скоро свяжется с вами',
       );
     }
-    if (recent.length >= MAX_REQUESTS_PER_HOUR) {
+    if (!offer && recent.length >= MAX_REQUESTS_PER_HOUR) {
       throw new HttpException(
         'Слишком много заявок, попробуйте позже',
         HttpStatus.TOO_MANY_REQUESTS,
@@ -97,7 +102,8 @@ export class RequestsService implements OnModuleInit {
         name: dto.name.trim(),
         phone,
         qty: dto.qty,
-        ...priceBreakdown(listing.price, dto.qty),
+        offerId: offer?.id,
+        ...priceBreakdown(offer?.price ?? listing.price, dto.qty),
       },
       include: REQUEST_INCLUDE,
     });
@@ -125,10 +131,12 @@ export class RequestsService implements OnModuleInit {
   private toPublic(
     r: Prisma.PurchaseRequestGetPayload<{ include: typeof REQUEST_INCLUDE }>,
   ) {
-    const { listing, tgMessageId, ...rest } = r;
+    const { listing, tgMessageId, offer, ...rest } = r;
     void tgMessageId; // служебное поле Telegram наружу не отдаём
     return {
       ...rest,
+      // цена в объявлении, если заявка появилась после торга
+      listPrice: offer?.listPrice ?? null,
       listing: {
         id: listing.id,
         eventId: listing.eventId,

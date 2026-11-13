@@ -1,6 +1,7 @@
 import { Delivery } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -48,6 +49,14 @@ export class CreateListingDto {
   @Min(1000)
   @Max(100_000_000)
   price: number;
+
+  /** Торг уместен: покупатели могут предложить свою цену. По умолчанию цена окончательная */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    value === 'true' ? true : value === 'false' ? false : value,
+  )
+  @IsBoolean()
+  negotiable?: boolean;
 
   @IsEnum(Delivery)
   delivery: Delivery;

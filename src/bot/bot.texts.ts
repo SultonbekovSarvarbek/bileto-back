@@ -35,6 +35,11 @@ const ru = {
     DELIVERY: '🚚 Доставка',
     PICKUP: '🤝 Самовывоз',
   } as Record<Delivery, string>,
+  // Торг: продавец выбирает при создании объявления.
+  negotiable: {
+    final: '🔒 Цена окончательная',
+    open: '💬 Торг уместен',
+  },
   sum: 'сум',
   pcs: 'шт.',
   welcome: [
@@ -83,6 +88,51 @@ const ru = {
   buy: '🛒 Купить',
   unavailable: 'Этот билет уже недоступен.',
   howMany: 'Сколько билетов нужно?',
+  offer: '💬 Предложить цену',
+  offerAsk: (price: string) =>
+    `Цена продавца — ${price} за билет. Какую цену за 1 билет предлагаете? Напишите число в сумах.`,
+  offerPriceError: 'Напишите цену числом — от 1 000 сум.',
+  offerSent: (title: string, qty: string, price: string) =>
+    [
+      '✅ <b>Предложение отправлено продавцу</b>',
+      '',
+      `<b>${title}</b>`,
+      `${qty} × ${price}`,
+      '',
+      'Продавец увидит ваше имя из Telegram и номер со скрытыми цифрами. Как только он ответит, мы напишем вам сюда.',
+    ].join('\n'),
+  offerIncoming: (o: {
+    title: string;
+    name: string;
+    phone: string;
+    qty: string;
+    price: string;
+    listPrice: string;
+  }) =>
+    [
+      '💬 <b>Вам предложили цену</b>',
+      '',
+      `<b>${o.title}</b>`,
+      `👤 ${o.name}, ${o.phone}`,
+      `Предлагает: ${o.qty} × <b>${o.price}</b>`,
+      `Ваша цена: ${o.listPrice}`,
+      '',
+      'Если примете — оператор Bileto свяжется с вами и покупателем и проведёт сделку по этой цене.',
+    ].join('\n'),
+  offerAccept: '✅ Принять',
+  offerDecline: '❌ Отклонить',
+  offerAcceptedSeller: (n: number) =>
+    `✅ Вы приняли цену. Создана заявка #${n} — оператор Bileto скоро позвонит.`,
+  offerDeclinedSeller: '❌ Вы отклонили предложение.',
+  offerAcceptedBuyer: (title: string, price: string, n: number) =>
+    [
+      '🎉 <b>Продавец принял вашу цену</b>',
+      '',
+      `<b>${title}</b> — ${price} за билет`,
+      `Создана заявка #${n}. Оператор Bileto скоро позвонит вам и расскажет, как оплатить и получить билет.`,
+    ].join('\n'),
+  offerDeclinedBuyer: (title: string, price: string) =>
+    `😔 Продавец не согласился на ${price} за билет «${title}». Можно предложить другую цену или купить по цене продавца.`,
   noRequests: (buy: string) => `Заявок пока нет. Найдите билет через «${buy}».`,
   myRequests: '🧾 <b>Мои заявки</b>',
   sellIntro:
@@ -94,6 +144,8 @@ const ru = {
   cityError: 'Напишите город.',
   askPrice: 'Цена за 1 билет в сумах? Например: 250000',
   priceError: 'Цена — число от 1 000 до 100 000 000 сум.',
+  askNegotiable:
+    'Цена окончательная или торг уместен? При торге покупатели смогут предложить свою цену — решать вам.',
   askQty: 'Сколько билетов продаёте?',
   qtyError: 'От 1 до 10 билетов.',
   askDelivery: 'Как покупатель получит билет?',
@@ -168,6 +220,10 @@ const uz: Texts = {
     DELIVERY: '🚚 Етказиб бериш',
     PICKUP: '🤝 Ўзи олиб кетади',
   },
+  negotiable: {
+    final: '🔒 Нарх қатъий',
+    open: '💬 Келишамиз',
+  },
   sum: 'сўм',
   pcs: 'та',
   welcome: [
@@ -217,6 +273,51 @@ const uz: Texts = {
   buy: '🛒 Сотиб олиш',
   unavailable: 'Бу чипта энди мавжуд эмас.',
   howMany: 'Нечта чипта керак?',
+  offer: '💬 Нарх таклиф қилиш',
+  offerAsk: (price: string) =>
+    `Сотувчи нархи — битта чипта ${price}. Битта чипта учун қанча таклиф қиласиз? Сўмда рақам билан ёзинг.`,
+  offerPriceError: 'Нархни рақам билан ёзинг — 1 000 сўмдан.',
+  offerSent: (title: string, qty: string, price: string) =>
+    [
+      '✅ <b>Таклиф сотувчига юборилди</b>',
+      '',
+      `<b>${title}</b>`,
+      `${qty} × ${price}`,
+      '',
+      'Сотувчи Telegram’даги исмингизни ва рақамингизни қисман яширилган ҳолда кўради. У жавоб бериши билан шу ерга ёзамиз.',
+    ].join('\n'),
+  offerIncoming: (o: {
+    title: string;
+    name: string;
+    phone: string;
+    qty: string;
+    price: string;
+    listPrice: string;
+  }) =>
+    [
+      '💬 <b>Сизга нарх таклиф қилишди</b>',
+      '',
+      `<b>${o.title}</b>`,
+      `👤 ${o.name}, ${o.phone}`,
+      `Таклиф: ${o.qty} × <b>${o.price}</b>`,
+      `Сизнинг нархингиз: ${o.listPrice}`,
+      '',
+      'Қабул қилсангиз — Bileto оператори сиз ва харидор билан боғланиб, савдони шу нархда ўтказади.',
+    ].join('\n'),
+  offerAccept: '✅ Қабул қилиш',
+  offerDecline: '❌ Рад этиш',
+  offerAcceptedSeller: (n: number) =>
+    `✅ Нархни қабул қилдингиз. #${n}-ариза яратилди — Bileto оператори тез орада қўнғироқ қилади.`,
+  offerDeclinedSeller: '❌ Таклифни рад этдингиз.',
+  offerAcceptedBuyer: (title: string, price: string, n: number) =>
+    [
+      '🎉 <b>Сотувчи нархингизни қабул қилди</b>',
+      '',
+      `<b>${title}</b> — битта чипта ${price}`,
+      `#${n}-ариза яратилди. Bileto оператори тез орада қўнғироқ қилиб, қандай тўлаш ва чиптани олишни айтиб беради.`,
+    ].join('\n'),
+  offerDeclinedBuyer: (title: string, price: string) =>
+    `😔 Сотувчи «${title}» чиптаси учун ${price} нархига рози бўлмади. Бошқа нарх таклиф қилишингиз ёки сотувчи нархида олишингиз мумкин.`,
   noRequests: (buy: string) =>
     `Ҳозирча аризалар йўқ. Чиптани «${buy}» орқали топинг.`,
   myRequests: '🧾 <b>Аризаларим</b>',
@@ -229,6 +330,8 @@ const uz: Texts = {
   cityError: 'Шаҳарни ёзинг.',
   askPrice: 'Битта чипта нархи сўмда? Масалан: 250000',
   priceError: 'Нарх 1 000 дан 100 000 000 сўмгача бўлсин.',
+  askNegotiable:
+    'Нарх қатъийми ёки келишиш мумкинми? Келишиш мумкин бўлса, харидорлар ўз нархини таклиф қила олади — қарор сизда.',
   askQty: 'Нечта чипта сотяпсиз?',
   qtyError: '1 тадан 10 тагача чипта.',
   askDelivery: 'Харидор чиптани қандай олади?',
@@ -294,6 +397,27 @@ const UZ_ERRORS: [RegExp, string][] = [
   [/^Нельзя купить свой билет.*$/, 'Ўз чиптангизни сотиб ола олмайсиз.'],
   [/^Объявление уже снято.*$/, 'Эълон аллақачон сотувдан олинган.'],
   [
+    /^Продавец указал, что цена окончательная.*$/,
+    'Сотувчи нархни қатъий деб белгилаган — келишиш кўзда тутилмаган.',
+  ],
+  [
+    /^Предложите цену ниже цены продавца.*$/,
+    'Сотувчи нархидан пастроқ нарх таклиф қилинг — ёки оддий ариза қолдиринг.',
+  ],
+  [
+    /^Вы уже предложили цену за этот билет.*$/,
+    'Бу чипта учун нарх таклиф қилгансиз — сотувчининг жавобини кутинг.',
+  ],
+  [
+    /^Слишком много предложений.*$/,
+    'Таклифлар жуда кўп, кейинроқ уриниб кўринг.',
+  ],
+  [/^Предложение не найдено$/, 'Таклиф топилмади.'],
+  [
+    /^На это предложение уже ответили$/,
+    'Бу таклифга аллақачон жавоб берилган.',
+  ],
+  [
     /^У вас есть активные заявки на этот билет$/,
     'Бу чипта бўйича фаол аризаларингиз бор',
   ],
@@ -358,6 +482,13 @@ export const isCancel = (text: string) =>
   LANGS.some((l) => TEXTS[l].cancel === text);
 export const isSkip = (text: string) =>
   LANGS.some((l) => TEXTS[l].skip === text);
+// true — торг уместен, false — цена окончательная, undefined — не кнопка.
+export const negotiableFrom = (text: string) =>
+  LANGS.some((l) => TEXTS[l].negotiable.open === text)
+    ? true
+    : LANGS.some((l) => TEXTS[l].negotiable.final === text)
+      ? false
+      : undefined;
 export const deliveryFrom = (text: string) =>
   LANGS.flatMap(
     (l) => Object.entries(TEXTS[l].delivery) as [Delivery, string][],
@@ -368,6 +499,7 @@ type CardListing = {
   city: string;
   description: string | null;
   price: number;
+  negotiable: boolean;
   qtyAvailable: number;
   delivery: Delivery;
   status: string;
@@ -380,6 +512,7 @@ export function listingCard(t: Texts, l: CardListing) {
     ...(l.description ? ['', `💬 ${h(l.description.slice(0, 600))}`] : []),
     '',
     `💵 ${money(t, l.price)} — ${t.perTicket}`,
+    l.negotiable ? t.negotiable.open : t.negotiable.final,
     l.status === 'ACTIVE' && l.qtyAvailable > 0
       ? t.inStock(l.qtyAvailable)
       : t.soldOut,
